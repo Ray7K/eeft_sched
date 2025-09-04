@@ -1,3 +1,4 @@
 .cache/
 target/*
 *.vim
+compile_commands.json
