@@ -1,4 +1,14 @@
+config/
+
 .cache/
+
 target/*
+
+# exclude generated header and source files
+include/sys_config.h
+src/task_alloc.c
+
+# exclude editor backup and swap files
 *.vim
+
 compile_commands.json
