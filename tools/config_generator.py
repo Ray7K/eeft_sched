@@ -2,6 +2,9 @@
 import math
 from enum import IntEnum
 
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 import yaml
 
 # --- Paths ---
@@ -10,6 +13,8 @@ TASK_CONFIG_PATH = "config/tasks.yaml"
 
 OUTPUT_H_SYS_CONFIG_PATH = "include/sys_config.h"
 OUTPUT_C_TASK_ALLOC_PATH = "src/task_alloc.c"
+
+REPORT_PATH = "target/reports"
 
 
 class Processor:
@@ -350,6 +355,223 @@ const uint32_t ALLOCATION_MAP_SIZE = sizeof(allocation_map) / sizeof(TaskAllocat
     print(f"Successfully generated {OUTPUT_C_TASK_ALLOC_PATH}")
 
 
+# --- Report and Visualization Generation Functions ---
+def write_allocation_report(allocator: Allocator, filename: str):
+    report_lines = ["=" * 50, "--- Final Allocation Report ---", "=" * 50]
+
+    num_tasks = len(allocator.tasks)
+    procs_used = 0
+    cores_used = 0
+    assigned_tasks_count = 0
+
+    for proc in allocator.processors:
+        proc_task_num = 0
+
+        for core in proc.cores:
+            proc_task_num += len(core.assigned_primaries) + len(core.assigned_replicas)
+            if len(core.assigned_primaries) + len(core.assigned_replicas) > 0:
+                cores_used += 1
+
+        assigned_tasks_count += proc_task_num
+
+        if proc_task_num > 0:
+            procs_used += 1
+
+    report_lines.append(f"\n[Summary]")
+    report_lines.append(f"  - Total Unique Tasks: {num_tasks}")
+    report_lines.append(
+        f"  - Total Instances (Primaries + Replicas): {assigned_tasks_count}"
+    )
+    report_lines.append(
+        f"  - Processors Used: {procs_used} / {allocator.sys_config['system']['num_processors']}"
+    )
+    report_lines.append(f"  - Cores Used: {cores_used}")
+    report_lines.append("-" * 50)
+
+    for proc in allocator.processors:
+        report_lines.append(f"\nProcessor {proc.id}:")
+        if not any(
+            core.assigned_primaries or core.assigned_replicas for core in proc.cores
+        ):
+            report_lines.append("  <Unused>")
+            continue
+
+        for core in proc.cores:
+            primaries = [t.name for t in core.assigned_primaries]
+            replicas = [f"{t.name}(R)" for t in core.assigned_replicas]
+
+            report_lines.append(f"\n  Core {core.id}:")
+            if not primaries and not replicas:
+                report_lines.append("    <Empty>")
+                continue
+
+            util_strings = []
+            crit_levels_rev = sorted(
+                core.utilization.keys(),
+                key=lambda k: allocator.sys_config["criticality_levels"]["levels"][k],
+                reverse=True,
+            )
+            for level in crit_levels_rev:
+                util_strings.append(f"{level}: {core.utilization.get(level, 0.0):.2f}")
+            report_lines.append(f"    Util:      | {' | '.join(util_strings)}")
+
+            if primaries:
+                report_lines.append(f"    Primaries: | {', '.join(primaries)}")
+            if replicas:
+                report_lines.append(f"    Replicas:  | {', '.join(replicas)}")
+
+    with open(filename, "w") as f:
+        f.write("\n".join(report_lines))
+    print(f"Successfully generated text report at '{filename}'")
+
+
+def generate_utilization_heatmaps(allocator: Allocator, output_dir: str):
+    """Generates a graphical heatmap of core utilizations for each criticality level."""
+    print(f"Generating utilization heatmaps in '{output_dir}'...")
+    num_procs = len(allocator.processors)
+    num_cores = allocator.sys_config["system"]["num_cores_per_processor"]
+    crit_levels = allocator.sys_config["criticality_levels"]["levels"].keys()
+
+    for level in crit_levels:
+        util_data = np.zeros((num_procs, num_cores))
+        for proc in allocator.processors:
+            for core in proc.cores:
+                util_data[proc.id, core.id] = core.utilization.get(level, 0.0)
+
+        plt.figure(figsize=(10, 8))
+        heatmap = sns.heatmap(
+            util_data,
+            annot=True,
+            fmt=".2f",
+            linewidths=0.5,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+        )
+        heatmap.set_title(
+            f"Core Utilization @ {level}", fontdict={"fontsize": 16}, pad=12
+        )
+        heatmap.set_xlabel("Core ID")
+        heatmap.set_ylabel("Processor ID")
+
+        plt.savefig(f"{output_dir}/heatmap_{level}.png")
+        plt.close()
+    print("Heatmap generation complete.")
+
+
+def generate_utilization_stacked_chart(
+    allocator: Allocator, filename="allocation_stacked_chart.png"
+):
+    print(f"\nGenerating utilization stacked bar chart at '{filename}'...")
+
+    processors = allocator.processors
+    num_procs = len(processors)
+    num_cores = allocator.sys_config["system"]["num_cores_per_processor"]
+
+    # Get the criticality levels sorted from low to high for plotting
+    crit_levels = sorted(
+        allocator.sys_config["criticality_levels"]["levels"].keys(),
+        key=lambda k: allocator.sys_config["criticality_levels"]["levels"][k],
+    )
+
+    # --- Prepare the data for plotting ---
+    # Create a dictionary to hold the utilization data for each level
+    util_data = {level: [] for level in crit_levels}
+    core_labels = []
+
+    for proc in processors:
+        for core in proc.cores:
+            core_labels.append(f"P{proc.id}C{core.id}")
+            for level in crit_levels:
+                util_data[level].append(core.utilization.get(level, 0.0))
+
+    # --- Create the plot ---
+    width = 0.6  # Width of the bars
+    fig, ax = plt.subplots(figsize=(16, 8))
+    bottom = np.zeros(num_procs * num_cores)  # Start the first bar at the bottom
+
+    for level in crit_levels:
+        util_values = np.array(util_data[level])
+        ax.bar(core_labels, util_values, width, label=level, bottom=bottom)
+        bottom += util_values  # Stack the next bar on top of the current one
+
+    # --- Customize and save the plot ---
+    ax.set_title("Per-Core Utilization by Criticality Level", fontsize=16)
+    ax.set_ylabel("Cumulative Utilization")
+    ax.set_xlabel("Processor and Core ID")
+    ax.set_ylim(0, max(1.1, bottom.max() * 1.1))  # Set y-axis limit
+    ax.legend(title="Criticality Level")
+
+    plt.xticks(rotation=45, ha="right")  # Rotate x-axis labels for readability
+    plt.tight_layout()  # Adjust layout to prevent labels from overlapping
+    plt.savefig(filename)
+    plt.close()
+
+    print("Stacked bar chart generation complete.")
+
+
+def generate_utilization_grouped_chart(
+    allocator: Allocator, filename="allocation_grouped_chart.png"
+):
+    print(f"\nGenerating utilization grouped bar chart at '{filename}'...")
+
+    processors = allocator.processors
+    core_labels = [
+        f"P{p.id}C{c.id}" for p in processors for c in processors[p.id].cores
+    ]
+    crit_levels = sorted(
+        allocator.sys_config["criticality_levels"]["levels"].keys(),
+        key=lambda k: allocator.sys_config["criticality_levels"]["levels"][k],
+    )
+
+    util_data = {
+        level: [c.utilization.get(level, 0.0) for p in processors for c in p.cores]
+        for level in crit_levels
+    }
+
+    x = np.arange(len(core_labels))  # the label locations
+    width = 0.15  # the width of the bars
+    multiplier = 0
+
+    fig, ax = plt.subplots(figsize=(20, 8))
+
+    for level, utilization_values in util_data.items():
+        offset = width * multiplier
+        rects = ax.bar(x + offset, utilization_values, width, label=level)
+        multiplier += 1
+
+    ax.set_title("Per-Core Utilization by Criticality Level", fontsize=16)
+    ax.set_ylabel("Utilization")
+    ax.set_xticks(x + width * (len(crit_levels) - 1) / 2)
+    ax.set_xticklabels(core_labels, rotation=45, ha="right")
+    ax.legend(loc="upper left", ncols=len(crit_levels))
+    ax.set_ylim(0, 1.1)
+
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
+
+    print("Grouped bar chart generation complete.")
+
+
+import os
+
+
+def generate_reports(allocator: Allocator):
+    """Orchestrates the creation of all reports and visualizations."""
+    print("\n--- Generating Reports and Visualizations ---")
+
+    # Create subdirectories
+    heatmap_dir = f"{REPORT_PATH}/heatmaps"
+    os.makedirs(heatmap_dir, exist_ok=True)
+
+    # Generate reports
+    write_allocation_report(allocator, f"{REPORT_PATH}/allocation_report.txt")
+    generate_utilization_heatmaps(allocator, heatmap_dir)
+    generate_utilization_stacked_chart(allocator, f"{REPORT_PATH}/stacked_chart.png")
+    generate_utilization_grouped_chart(allocator, f"{REPORT_PATH}/grouped_chart.png")
+
+
 # --- Main Execution ---
 def main():
     global sys_config
@@ -375,6 +597,9 @@ def main():
 
     # 4. Generate task_config.h and task_config.c
     generate_task_config_c(allocator)
+
+    # 5. Reporting and Visualization
+    generate_reports(allocator)
 
     print("--- Generation Complete ---")
 
