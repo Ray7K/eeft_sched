@@ -103,7 +103,7 @@ class Task:
             return 0.0
 
         wcet_val = self.wcet[target_crit_num]
-        return wcet_val / self.period[0]
+        return wcet_val / self.period[target_crit_num]
 
 
 class Allocator:
