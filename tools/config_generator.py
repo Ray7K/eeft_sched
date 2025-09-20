@@ -81,7 +81,7 @@ class Task:
     def __init__(self, task_dict, sys_config):
         self.id: int = task_dict["taskId"]
         self.name: str = task_dict["name"]
-        self.period: list[int] = task_dict["period"]
+        self.period: int = task_dict["period"]
         self.deadline: list[int] = task_dict["deadline"]
         self.criticality_str: str = task_dict["criticality"]
         self.wcet: list[int] = task_dict["wcet"]
@@ -108,7 +108,7 @@ class Task:
             return 0.0
 
         wcet_val = self.wcet[target_crit_num]
-        return wcet_val / self.period[target_crit_num]
+        return wcet_val / self.period
 
 
 class Allocator:
@@ -299,13 +299,12 @@ def generate_task_config_c(allocator: Allocator):
     task_definitions = []
     max_crit_levels = allocator.sys_config["criticality_levels"]["max_levels"]
     for t in allocator.tasks:
-        period_str = format_array(t.period, max_crit_levels)
         deadline_str = format_array(t.deadline, max_crit_levels)
         wcet_str = format_array(t.wcet, max_crit_levels)
         task_def = (
             f"    {{\n"
             f"        .id = {t.id},\n"
-            f"        .period = {period_str},\n"
+            f"        .period = {t.period},\n"
             f"        .deadline = {deadline_str},\n"
             f"        .wcet = {wcet_str},\n"
             f"        .criticality_level = {t.criticality_str},\n"

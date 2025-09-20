@@ -7,7 +7,7 @@
 typedef struct {
   uint32_t id;
 
-  uint32_t period[MAX_CRITICALITY_LEVELS];
+  uint32_t period;
   uint32_t deadline[MAX_CRITICALITY_LEVELS];
   uint32_t wcet[MAX_CRITICALITY_LEVELS];
 
