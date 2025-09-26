@@ -22,7 +22,7 @@ typedef enum {
   JOB_STATE_COMPLETED
 } JobState;
 
-typedef struct {
+typedef struct Job {
   const Task *parent_task;
   uint32_t arrival_time;
   uint32_t absolute_deadline;
@@ -45,6 +45,6 @@ Job *create_job(const Task *parent_task);
 void release_job(Job *job);
 void add_to_queue_sorted(Job **queue_head, Job *job);
 Job *peek_next_job(Job *queue_head);
-Job *pop_next_job(Job *queue_head);
+Job *pop_next_job(Job **queue_head);
 
 #endif
