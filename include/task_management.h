@@ -1,7 +1,9 @@
 #ifndef TASK_MANAGEMENT_H
 #define TASK_MANAGEMENT_H
 
+#include "list.h"
 #include "sys_config.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
@@ -24,15 +26,18 @@ typedef enum {
 
 typedef struct Job {
   const Task *parent_task;
+
   uint32_t arrival_time;
   uint32_t absolute_deadline;
   uint32_t virtual_deadline;
-  uint32_t remaining_wcet;
+  uint32_t wcet;
+  uint32_t acet;
+  uint32_t executed_time;
 
-  uint8_t is_replica;
+  bool is_replica;
   JobState state;
 
-  struct Job *next;
+  struct list_head link;
 } Job;
 
 void task_management_init();
@@ -41,10 +46,13 @@ Task *create_task(uint32_t id, uint32_t period[], uint32_t deadline[],
                   uint32_t wcet[], uint8_t criticality_level,
                   uint8_t num_replicas);
 
-Job *create_job(const Task *parent_task);
-void release_job(Job *job);
-void add_to_queue_sorted(Job **queue_head, Job *job);
-Job *peek_next_job(Job *queue_head);
-Job *pop_next_job(Job **queue_head);
+Job *create_job(const Task *parent_task, uint16_t global_core_id);
+void release_job(Job *job, uint16_t global_core_id);
+void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add);
+Job *peek_next_job(struct list_head *queue_head);
+Job *pop_next_job(struct list_head *queue_head);
+void remove_job_with_parent_task_id(struct list_head *queue_head,
+                                    uint32_t task_id, uint16_t global_core_id);
+void print_queue(struct list_head *queue_head);
 
 #endif
