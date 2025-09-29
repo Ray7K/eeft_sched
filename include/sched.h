@@ -1,23 +1,29 @@
 #ifndef SCHED_H
 #define SCHED_H
 
+#include "list.h"
+#include "platform.h"
 #include "sys_config.h"
 #include "task_management.h"
 #include <stdbool.h>
 #include <stdint.h>
 
+extern ProcessorState processor_state;
+extern volatile uint32_t system_time;
+
 typedef struct {
   uint8_t proc_id;
   uint8_t core_id;
 
-  Job *ready_queue;
-  Job *replica_queue;
+  struct list_head ready_queue;
+  struct list_head replica_queue;
+  struct list_head discard_list;
 
   Job *running_job;
 
-  CriticalityLevel cur_crit_level;
-
   bool is_idle;
+
+  uint32_t busy_time;
 
 } CoreState;
 
@@ -27,6 +33,7 @@ void scheduler_tick(uint16_t global_core_id);
 
 void handle_job_completion(uint16_t global_core_id);
 
-void handle_mode_change(uint16_t global_core_id, CriticalityLevel new_level);
+void handle_mode_change(uint16_t global_core_id,
+                        CriticalityLevel new_criticality_level);
 
 #endif
