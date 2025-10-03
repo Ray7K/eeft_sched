@@ -1,4 +1,5 @@
 # pyright: basic
+import copy
 import math
 from enum import IntEnum
 
@@ -48,28 +49,171 @@ class Core:
         self.utilization: dict[str, float] = {
             level_name: 0.0 for level_name in sys_config["criticality_levels"]["levels"]
         }
+        self.sys_config = sys_config
 
-    def can_add_task(self, task) -> bool:
-        for level_name in self.utilization.keys():
-            task_util_at_level = task.get_utilization(level_name)
-            if self.utilization[level_name] + task_util_at_level > 1.0:
-                return False
+    def tune_mode(self, task, crit_level) -> bool:
+        if crit_level == "ASIL_D":
+            return True
+        crit_num = self.sys_config["criticality_levels"]["levels"][crit_level]
+
+        # Create a list of candidate tasks for this tuning operation
+        all_candidates = self.assigned_primaries + self.assigned_replicas
+        all_candidates.append(task)
+
+        # Filter candidates based on criticality
+        initial_candidates = [
+            t for t in all_candidates if t.criticality_level > crit_num
+        ]
+
+        # No candidates to tune for this level
+        if not initial_candidates:
+            return True
+
+        # Store temporary virtual deadlines to avoid permanent changes on failure
+        temp_virtual_deadlines = {
+            t.id: list(t.virtual_deadline) for t in all_candidates
+        }
+
+        # Work on a mutable copy of the candidate list
+        tuning_candidates = list(initial_candidates)
+
+        mods = []
+        periods = [t.period for t in all_candidates]
+        hyperperiod = math.lcm(*periods)
+        m = crit_num
+        m_prime = crit_num + 1
+
+        # Initial adjustment of virtual deadlines
+        for t in list(
+            tuning_candidates
+        ):  # Iterate over a copy as we might modify the list
+            d = min(
+                temp_virtual_deadlines[t.id][m], temp_virtual_deadlines[t.id][m_prime]
+            )
+            if d < t.wcet[m]:
+                return False  # Fail without applying any changes
+            temp_virtual_deadlines[t.id][m] = d
+            if d == t.wcet[m]:
+                tuning_candidates.remove(t)
+
+        def dbf(t, m, m_prime, l):
+            assert m == m_prime - 1
+            vd = temp_virtual_deadlines[t.id]
+            dbf_val = 0
+            if m == -1:
+                dbf_val = max(math.floor((l - vd[0]) / t.period) + 1, 0) * t.wcet[0]
+            else:
+                full = (
+                    max(math.floor((l - (vd[m_prime] - vd[m])) / t.period) + 1, 0)
+                    * t.wcet[m_prime]
+                )
+                x = l % t.period
+                done = 0
+                if vd[m_prime] > x and x >= vd[m_prime] - vd[m]:
+                    done = t.wcet[m] - x + vd[m_prime] - vd[m]
+                done = max(0, min(done, t.wcet[m_prime]))
+                dbf_val = full - done
+
+            # print("DBF", t.id, l, dbf_val)
+            return max(0, dbf_val)
+
+        changed = True
+        while changed:
+            changed = False
+            for l in range(hyperperiod + 1):
+                if crit_level == "QM":
+                    sum_dbf = sum(dbf(t, -1, 0, l) for t in all_candidates)
+                    if sum_dbf > l:
+                        if not mods:
+                            return False
+                        t = mods.pop()
+                        temp_virtual_deadlines[t.id][0] += 1
+                        if t not in tuning_candidates:
+                            tuning_candidates.append(t)
+                        tuning_candidates.remove(t)
+                        changed = True
+                        break
+
+                tasks_in_m_prime = [
+                    t for t in all_candidates if t.criticality_level >= m_prime
+                ]
+                sum_dbf = sum(dbf(t, m, m_prime, l) for t in tasks_in_m_prime)
+                if sum_dbf > l:
+                    if not tuning_candidates:
+                        return False
+
+                    target = tuning_candidates[0]
+                    max_delta = 0
+                    for t in tuning_candidates:
+                        a = dbf(t, m, m_prime, l)
+                        b = dbf(t, m, m_prime, l - 1)
+                        if a - b > max_delta:
+                            max_delta = a - b
+                            target = t
+
+                    temp_virtual_deadlines[target.id][m] -= 1
+                    mods.append(target)
+                    if temp_virtual_deadlines[target.id][m] == target.wcet[m]:
+                        tuning_candidates.remove(target)
+                    changed = True
+                    break
+
+        # If all checks passed, commit the changes
+        for t in initial_candidates:
+            t.virtual_deadline = temp_virtual_deadlines[t.id]
+
         return True
 
-    def add_task(self, task, task_type) -> None:
-        if not self.can_add_task(task):
-            raise Exception(
-                f"Cannot add task {task.id} to core {self.processor_id}:{self.id}, exceeds utilization."
-            )
+    def _perform_tuning_check(self, task):
+        crit_levels = self.sys_config["criticality_levels"]["levels"]
+        crit_levels_sorted = sorted(
+            crit_levels.keys(), key=lambda k: crit_levels[k], reverse=True
+        )
 
-        if task_type == TaskType.Primary:
+        affected_tasks = self.assigned_primaries + self.assigned_replicas + [task]
+        original_vds = {t.id: list(t.virtual_deadline) for t in affected_tasks}
+
+        success = True
+        for level in crit_levels_sorted:
+            if self.utilization[level] + task.get_utilization(level) > 1.0:
+                success = False
+                break
+            if not self.tune_mode(task, level):
+                success = False
+                break
+
+        return success, original_vds, affected_tasks
+
+    def tune_system(self, task, allocation_type) -> bool:
+        success, original_vds, affected_tasks = self._perform_tuning_check(task)
+
+        if not success:
+            # If any check failed, restore all virtual deadlines from the backup
+            for t in affected_tasks:
+                if t.id in original_vds:
+                    t.virtual_deadline = original_vds[t.id]
+            return False
+
+        # On complete success, add the task to the core
+        if allocation_type == TaskType.Primary:
             self.assigned_primaries.append(task)
-        if task_type == TaskType.Replica:
+        if allocation_type == TaskType.Replica:
             self.assigned_replicas.append(task)
 
-        # Update the utilization for every criticality level
         for level_name in self.utilization.keys():
             self.utilization[level_name] += task.get_utilization(level_name)
+
+        return True
+
+    def can_tune_system(self, task) -> bool:
+        success, original_vds, affected_tasks = self._perform_tuning_check(task)
+
+        # Always restore the original virtual deadlines for a 'dry run'
+        for t in affected_tasks:
+            if t.id in original_vds:
+                t.virtual_deadline = original_vds[t.id]
+
+        return success
 
 
 class TaskType(IntEnum):
@@ -82,7 +226,10 @@ class Task:
         self.id: int = task_dict["taskId"]
         self.name: str = task_dict["name"]
         self.period: int = task_dict["period"]
-        self.deadline: list[int] = task_dict["deadline"]
+        self.deadline: int = task_dict["deadline"]
+        self.virtual_deadline: list[int] = [
+            task_dict["deadline"] for _ in range(len(task_dict["wcet"]))
+        ]
         self.criticality_str: str = task_dict["criticality"]
         self.wcet: list[int] = task_dict["wcet"]
         self.replicas: int = task_dict.get("replicas", 0)
@@ -109,6 +256,17 @@ class Task:
 
         wcet_val = self.wcet[target_crit_num]
         return wcet_val / self.period
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            if k == "_sys_config":
+                setattr(result, k, v)  # Shallow copy
+            else:
+                setattr(result, k, copy.deepcopy(v, memo))  # Deep copy
+        return result
 
 
 class Allocator:
@@ -175,8 +333,8 @@ class Allocator:
         for proc_id in range(self.num_procs_estimate):
             proc = self.processors[proc_id]
             for core in proc.cores:
-                if core.can_add_task(task) and not core.assigned_primaries:
-                    core.add_task(task, TaskType.Primary)
+                if core.can_tune_system(task) and not core.assigned_primaries:
+                    core.tune_system(copy.deepcopy(task), TaskType.Primary)
                     return True
 
         min_num_of_primaries = float("inf")
@@ -186,7 +344,7 @@ class Allocator:
         for proc_id in range(self.num_procs_estimate):
             proc = self.processors[proc_id]
             for core in proc.cores:
-                if core.can_add_task(task):
+                if core.can_tune_system(task):
                     y = len(core.assigned_primaries)
                     if y < min_num_of_primaries:
                         min_num_of_primaries = y
@@ -194,7 +352,7 @@ class Allocator:
                         chosen_proc = proc
 
         if chosen_core and chosen_proc:
-            chosen_core.add_task(task, TaskType.Primary)
+            chosen_core.tune_system(copy.deepcopy(task), TaskType.Primary)
             return True
 
         return False
@@ -211,7 +369,7 @@ class Allocator:
                 continue
 
             for core in proc.cores:
-                if core.can_add_task(task):
+                if core.can_tune_system(task):
                     is_safe = True
                     if task.replicas == 1:
                         for other_primary in core.assigned_primaries:
@@ -219,7 +377,7 @@ class Allocator:
                                 is_safe = False
                                 break
                     if is_safe:
-                        core.add_task(task, TaskType.Replica)
+                        core.tune_system(copy.deepcopy(task), TaskType.Replica)
                         return True
         return False
 
@@ -250,6 +408,7 @@ class Allocator:
         sorted_tasks = self._sort_tasks()
 
         for taskset in sorted_tasks:
+            print("Allocating tasks of criticality level:", taskset[0].criticality_str)
             self.allocate_tasks(taskset)
 
 
@@ -299,13 +458,12 @@ def generate_task_config_c(allocator: Allocator):
     task_definitions = []
     max_crit_levels = allocator.sys_config["criticality_levels"]["max_levels"]
     for t in allocator.tasks:
-        deadline_str = format_array(t.deadline, max_crit_levels)
         wcet_str = format_array(t.wcet, max_crit_levels)
         task_def = (
             f"    {{\n"
             f"        .id = {t.id},\n"
             f"        .period = {t.period},\n"
-            f"        .deadline = {deadline_str},\n"
+            f"        .deadline = {t.deadline},\n"
             f"        .wcet = {wcet_str},\n"
             f"        .criticality_level = {t.criticality_str},\n"
             f"        .num_replicas = {t.replicas}\n"
@@ -318,12 +476,18 @@ def generate_task_config_c(allocator: Allocator):
     for proc in allocator.processors:
         for core in proc.cores:
             for task in core.assigned_primaries:
+                virtual_deadline_str = format_array(
+                    task.virtual_deadline, max_crit_levels
+                )
                 map_entries.append(
-                    f"    {{ .task_id = {task.id}, .task_type = Primary , .proc_id = {proc.id}, .core_id = {core.id}}}"
+                    f"    {{ .task_id = {task.id}, .task_type = Primary , .proc_id = {proc.id}, .core_id = {core.id}, .tuned_deadlines = {virtual_deadline_str}}}"
                 )
             for task in core.assigned_replicas:
+                virtual_deadline_str = format_array(
+                    task.virtual_deadline, max_crit_levels
+                )
                 map_entries.append(
-                    f"    {{ .task_id = {task.id}, .task_type = Replica , .proc_id = {proc.id}, .core_id = {core.id}}}"
+                    f"    {{ .task_id = {task.id}, .task_type = Replica , .proc_id = {proc.id}, .core_id = {core.id}, .tuned_deadlines = {virtual_deadline_str}}}"
                 )
 
     task_definitions_str = ",\n".join(task_definitions)
