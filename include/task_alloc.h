@@ -1,6 +1,7 @@
 #ifndef TASK_ALLOC_H
 #define TASK_ALLOC_H
 
+#include "sys_config.h"
 #include "task_management.h"
 #include <stdint.h>
 
@@ -11,6 +12,7 @@ typedef struct {
   TaskType task_type;
   uint8_t proc_id;
   uint8_t core_id;
+  uint32_t tuned_deadlines[MAX_CRITICALITY_LEVELS];
 } TaskAllocationMap;
 
 extern const Task system_tasks[];
