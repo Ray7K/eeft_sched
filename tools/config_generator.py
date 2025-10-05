@@ -175,7 +175,11 @@ class Core:
 
         success = True
         for level in crit_levels_sorted:
-            if self.utilization[level] + task.get_utilization(level) > 1.0:
+            crit_num = self.sys_config["criticality_levels"]["levels"][level]
+            if (
+                task.criticality_level >= crit_num
+                and self.utilization[level] + task.get_utilization(level) > 1.0
+            ):
                 success = False
                 break
             if not self.tune_mode(task, level):
@@ -201,7 +205,9 @@ class Core:
             self.assigned_replicas.append(task)
 
         for level_name in self.utilization.keys():
-            self.utilization[level_name] += task.get_utilization(level_name)
+            crit_num = self.sys_config["criticality_levels"]["levels"][level_name]
+            if task.criticality_level >= crit_num:
+                self.utilization[level_name] += task.get_utilization(level_name)
 
         return True
 
