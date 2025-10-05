@@ -28,8 +28,11 @@ static uint32_t generate_acet(Job *job) {
   }
 
   uint8_t percentage = rand() % 100;
-  uint32_t acet =
-      percentage / 100.00 * job->parent_task->wcet[criticality_level];
+  if (criticality_level < processor_state.system_criticality_level) {
+    criticality_level = processor_state.system_criticality_level;
+  }
+  uint32_t acet = (uint32_t)(percentage / 100.0 *
+                             job->parent_task->wcet[criticality_level]);
   if (acet == 0) {
     acet = 1;
   }
