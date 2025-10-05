@@ -3,7 +3,6 @@
 
 #include "list.h"
 #include "platform.h"
-#include "sys_config.h"
 #include "task_management.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -30,10 +29,5 @@ typedef struct {
 void scheduler_init();
 
 void scheduler_tick(uint16_t global_core_id);
-
-void handle_job_completion(uint16_t global_core_id);
-
-void handle_mode_change(uint16_t global_core_id,
-                        CriticalityLevel new_criticality_level);
 
 #endif
