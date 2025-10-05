@@ -47,20 +47,39 @@ static Task *find_task_by_id(uint32_t task_id) {
 
 static uint32_t find_slack(uint32_t global_core_id, Job *candidate_job) {
   CoreState *core_state = &core_states[global_core_id];
-  if (candidate_job->absolute_deadline <= system_time) {
+  uint32_t current_time = system_time;
+  uint32_t deadline = candidate_job->virtual_deadline;
+
+  if (deadline <= current_time) {
     return 0;
   }
   uint32_t max_slack = candidate_job->absolute_deadline - system_time;
 
+  uint32_t demand = 0;
+
+  // Demand from the currently running job
   if (core_state->running_job != NULL) {
-    uint32_t remaining_wcet =
-        core_state->running_job->wcet - core_state->running_job->executed_time;
-    if (remaining_wcet > max_slack) {
-      return 0;
+    if (core_state->running_job->virtual_deadline <= deadline) {
+      demand += core_state->running_job->wcet -
+                core_state->running_job->executed_time;
+    }
+  }
+
+  // Demand from jobs already in the ready queue
+  Job *job, *next_job;
+  list_for_each_entry_safe(job, next_job, &core_state->ready_queue, link) {
+    if (job->virtual_deadline <= deadline) {
+      demand += job->wcet - job->executed_time;
+    }
+  }
+  list_for_each_entry_safe(job, next_job, &core_state->replica_queue, link) {
+    if (job->virtual_deadline <= deadline) {
+      demand += job->wcet - job->executed_time;
     }
     max_slack -= remaining_wcet;
   }
 
+  // Demand from future job arrivals of high-criticality tasks
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
     const TaskAllocationMap *instance = &allocation_map[i];
 
@@ -68,42 +87,25 @@ static uint32_t find_slack(uint32_t global_core_id, Job *candidate_job) {
         instance->core_id == core_state->core_id) {
       const Task *task = find_task_by_id(instance->task_id);
 
-      for (uint32_t arrival_time = 0;
-           arrival_time < candidate_job->absolute_deadline;
-           arrival_time += task->period) {
-        uint32_t job_deadline =
-            arrival_time +
-            task->deadline[processor_state.system_criticality_level];
-        if (job_deadline <= system_time) {
-          continue;
-        }
-        uint32_t remaining_worst_case_wcet =
-            task->wcet[task->criticality_level];
-        uint32_t worst_case_wcet = task->wcet[task->criticality_level];
+      if (task->criticality_level >= processor_state.system_criticality_level) {
+        uint32_t wcet = task->wcet[processor_state.system_criticality_level];
+        uint32_t period = task->period;
 
-        if (job_deadline < candidate_job->absolute_deadline) {
-          if (max_slack < worst_case_wcet) {
-            return 0;
+        uint32_t arrival_time = (current_time / period + 1) * period;
+        if (current_time % period == 0) {
+          arrival_time = current_time;
+        }
+        while (1) {
+          uint32_t future_job_deadline =
+              arrival_time +
+              instance
+                  ->tuned_deadlines[processor_state.system_criticality_level];
+
+          if (future_job_deadline > deadline) {
+            break;
           }
-          max_slack -= worst_case_wcet;
-        } else {
-          if (arrival_time <= system_time) {
-            if (max_slack <= (candidate_job->absolute_deadline - system_time) /
-                                 (job_deadline - system_time) *
-                                 remaining_worst_case_wcet) {
-              return 0;
-            }
-            max_slack -= (candidate_job->absolute_deadline - system_time) /
-                         (job_deadline - system_time) *
-                         remaining_worst_case_wcet;
-          } else {
-            if (max_slack <= (candidate_job->absolute_deadline - arrival_time) /
-                                 task->period) {
-              return 0;
-            }
-            max_slack -= (candidate_job->absolute_deadline - arrival_time) /
-                         task->period;
-          }
+          demand += wcet;
+          arrival_time += period;
         }
       }
     }
@@ -114,21 +116,12 @@ static uint32_t find_slack(uint32_t global_core_id, Job *candidate_job) {
 void scheduler_init() {
   printf("Initializing Scheduler...\n");
 
-  task_management_init();
-
-  for (int i = 0; i < TOTAL_CORES; i++) {
-    core_states[i].proc_id = i / NUM_CORES_PER_PROC;
-    core_states[i].core_id = i % NUM_CORES_PER_PROC;
-    core_states[i].running_job = NULL;
-    core_states[i].is_idle = true;
-    core_states[i].busy_time = 0;
-
-    INIT_LIST_HEAD(&core_states[i].ready_queue);
-    INIT_LIST_HEAD(&core_states[i].replica_queue);
-    INIT_LIST_HEAD(&core_states[i].discard_list);
+  uint32_t interval_length = deadline - current_time;
+  if (demand >= interval_length) {
+    return 0;
   }
 
-  printf("Scheduler Initialized for %d cores.\n", TOTAL_CORES);
+  return interval_length - demand;
 }
 
 void scheduler_tick(uint16_t global_core_id) {
