@@ -56,7 +56,6 @@ static uint32_t find_slack(uint32_t global_core_id, Job *candidate_job) {
   if (deadline <= current_time) {
     return 0;
   }
-  uint32_t max_slack = candidate_job->absolute_deadline - system_time;
 
   uint32_t demand = 0;
 
@@ -79,7 +78,6 @@ static uint32_t find_slack(uint32_t global_core_id, Job *candidate_job) {
     if (job->virtual_deadline <= deadline) {
       demand += job->wcet - job->executed_time;
     }
-    max_slack -= remaining_wcet;
   }
 
   // Demand from future job arrivals of high-criticality tasks
