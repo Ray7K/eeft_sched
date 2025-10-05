@@ -10,7 +10,7 @@ typedef struct {
   uint32_t id;
 
   uint32_t period;
-  uint32_t deadline[MAX_CRITICALITY_LEVELS];
+  uint32_t deadline;
   uint32_t wcet[MAX_CRITICALITY_LEVELS];
 
   CriticalityLevel criticality_level;
@@ -28,7 +28,8 @@ typedef struct Job {
   const Task *parent_task;
 
   uint32_t arrival_time;
-  uint32_t absolute_deadline;
+  uint32_t relative_tuned_deadlines[MAX_CRITICALITY_LEVELS];
+  uint32_t actual_deadline;
   uint32_t virtual_deadline;
   uint32_t wcet;
   uint32_t acet;
