@@ -31,9 +31,9 @@ typedef struct Job {
   uint32_t relative_tuned_deadlines[MAX_CRITICALITY_LEVELS];
   uint32_t actual_deadline;
   uint32_t virtual_deadline;
-  uint32_t wcet;
-  uint32_t acet;
-  uint32_t executed_time;
+  float wcet;
+  float acet;
+  float executed_time;
 
   bool is_replica;
   JobState state;

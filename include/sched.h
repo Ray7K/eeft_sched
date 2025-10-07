@@ -22,12 +22,21 @@ typedef struct {
 
   bool is_idle;
 
-  uint32_t busy_time;
+  float busy_time;
 
+  float work_done;
+
+  uint8_t current_dvfs_level;
 } CoreState;
 
 void scheduler_init();
 
 void scheduler_tick(uint16_t global_core_id);
+
+float find_slack(uint16_t global_core_id, uint32_t time, float scaling_factor);
+
+#define TOTAL_CORES (NUM_PROC * NUM_CORES_PER_PROC)
+
+extern CoreState core_states[TOTAL_CORES];
 
 #endif

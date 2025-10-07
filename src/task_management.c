@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define JOBS_PER_CORE 30
+#define JOBS_PER_CORE 100
 
 static Job per_core_job_pool[NUM_CORES_PER_PROC][JOBS_PER_CORE];
 
@@ -91,8 +91,9 @@ void print_queue(struct list_head *queue_head) {
   }
 
   list_for_each_entry_safe(cursor, n, queue_head, link) {
-    printf("Job(ID: %d, Deadline: %d)", cursor->parent_task->id,
-           cursor->virtual_deadline);
+    printf("Job(ID: %d, Virtual Deadline: %d, Remaining ACET: %.2f)",
+           cursor->parent_task->id, cursor->virtual_deadline,
+           cursor->acet - cursor->executed_time);
 
     if (cursor->link.next != queue_head) {
       printf(" -> ");
