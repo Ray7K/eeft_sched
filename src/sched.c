@@ -57,7 +57,7 @@ static Task *find_task_by_id(uint32_t task_id) {
 
 float find_slack(uint16_t global_core_id, uint32_t t, float scaling_factor) {
   CoreState *core_state = &core_states[global_core_id];
-  uint32_t current_time = system_time;
+  uint32_t current_time = processor_state.system_time;
 
   if (t <= current_time) {
     return 0;
@@ -159,7 +159,7 @@ static void handle_job_completion(uint16_t global_core_id) {
   Job *completed_job = core_state->running_job;
   printf("Job %d completed on core %d at time %d\n",
          completed_job->parent_task->id, global_core_id % NUM_CORES_PER_PROC,
-         system_time);
+         processor_state.system_time);
 
   if (completed_job == NULL) {
     printf("No running job to complete on core %d\n",
@@ -184,7 +184,7 @@ static void handle_mode_change(uint16_t global_core_id,
   processor_state.system_criticality_level = new_criticality_level;
   printf("Mode Change to %d on core %d at time %d\n",
          processor_state.system_criticality_level,
-         global_core_id % NUM_CORES_PER_PROC, system_time);
+         global_core_id % NUM_CORES_PER_PROC, processor_state.system_time);
 
   if (core_state->running_job != NULL) {
     Job *running_job = core_state->running_job;
@@ -250,7 +250,7 @@ static void handle_job_arrivals(uint16_t global_core_id) {
         instance->core_id == core_state->core_id) {
       Task *task = find_task_by_id(instance->task_id);
 
-      if (system_time % task->period != 0) {
+      if (processor_state.system_time % task->period != 0) {
         continue;
       }
       Job *new_job = create_job(task, global_core_id);
@@ -259,14 +259,15 @@ static void handle_job_arrivals(uint16_t global_core_id) {
       }
 
       // update job parameters
-      new_job->arrival_time = system_time;
+      new_job->arrival_time = processor_state.system_time;
       for (uint8_t level = 0; level < MAX_CRITICALITY_LEVELS; level++) {
         new_job->relative_tuned_deadlines[level] =
             instance->tuned_deadlines[level];
       }
-      new_job->actual_deadline = system_time + new_job->parent_task->deadline;
+      new_job->actual_deadline =
+          processor_state.system_time + new_job->parent_task->deadline;
       new_job->virtual_deadline =
-          system_time +
+          processor_state.system_time +
           instance->tuned_deadlines[processor_state.system_criticality_level];
       new_job->wcet =
           new_job->parent_task->wcet[processor_state.system_criticality_level];
@@ -321,9 +322,11 @@ static void handle_running_job(uint16_t global_core_id) {
         core_state->running_job->executed_time);
     // Incase job isn't able to meet deadline
     if (core_state->running_job->state != JOB_STATE_COMPLETED &&
-        system_time > core_state->running_job->actual_deadline) {
+        processor_state.system_time >
+            core_state->running_job->actual_deadline) {
       printf("Job %d missed its deadline at time %d\n",
-             core_state->running_job->parent_task->id, system_time);
+             core_state->running_job->parent_task->id,
+             processor_state.system_time);
       exit(1);
     }
 
@@ -469,9 +472,9 @@ void scheduler_tick(uint16_t global_core_id) {
   CoreState *core_state = &core_states[global_core_id];
 
   printf("Utilization: %.2f %%\n",
-         core_state->busy_time * 100.0 / (system_time + 1));
+         core_state->busy_time * 100.0 / (processor_state.system_time + 1));
   printf("Average Frequency Scaling: %.2f %%\n",
-         core_state->work_done * 100.0 / (system_time + 1));
+         core_state->work_done * 100.0 / (processor_state.system_time + 1));
   printf("Current Criticality Level: %d\n\n",
          processor_state.system_criticality_level);
 

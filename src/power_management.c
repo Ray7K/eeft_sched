@@ -1,5 +1,6 @@
 #include "power_management.h"
 #include "list.h"
+#include "platform.h"
 #include "sched.h"
 #include <float.h>
 #include <stdint.h>
@@ -29,7 +30,8 @@ uint8_t calc_required_dvfs_level(uint16_t global_core_id) {
       core_state->running_job->wcet - core_state->running_job->executed_time;
 
   float running_job_slack =
-      (core_state->running_job->actual_deadline - system_time) - remaining_wcet;
+      (core_state->running_job->actual_deadline - processor_state.system_time) -
+      remaining_wcet;
 
   float min_slack = running_job_slack;
 

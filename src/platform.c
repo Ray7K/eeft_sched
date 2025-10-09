@@ -11,21 +11,19 @@ ProcessorState processor_state;
 
 #define SYSTEM_TICK_MS 1
 
-volatile uint32_t system_time = 0;
-
 static void *timer_thread_func() {
   while (1) {
     // printf("[Proc %u] System Time: %u ms\n", processor_state.processor_id,
-    // system_time);
+    // processor_state.system_time);
     usleep(1000 * SYSTEM_TICK_MS);
     Job *cur, *next;
     list_for_each_entry_safe(cur, next, &processor_state.discard_queue, link) {
-      if (cur->actual_deadline >= system_time) {
+      if (cur->actual_deadline >= processor_state.system_time) {
         remove_job_with_parent_task_id(&processor_state.discard_queue,
                                        cur->parent_task->id, 0);
       }
     }
-    __sync_fetch_and_add(&system_time, 1);
+    __sync_fetch_and_add(&processor_state.system_time, 1);
   }
   return NULL;
 }
@@ -35,15 +33,16 @@ static void *timer_thread_func() {
  */
 static void *core_thread_func(void *arg) {
   uint8_t local_core_id = *((uint8_t *)arg);
-  uint32_t last_tick = system_time;
+  uint32_t last_tick = processor_state.system_time;
 
   while (1) {
 
-    if (system_time > last_tick) {
-      last_tick = system_time;
+    if (processor_state.system_time > last_tick) {
+      last_tick = processor_state.system_time;
       scheduler_tick(local_core_id);
       printf("[Proc %u] Core %u Tick at System Time %u ms\n",
-             processor_state.processor_id, local_core_id, system_time);
+             processor_state.processor_id, local_core_id,
+             processor_state.system_time);
     }
     // Small sleep to prevent the simulation from using 100% host CPU.
     // This would not exist on bare metal.
@@ -55,6 +54,7 @@ static void *core_thread_func(void *arg) {
 void platform_init(uint8_t proc_id) {
   printf("Initializing System for Processor %d...\n", proc_id);
 
+  processor_state.system_time = 0;
   processor_state.processor_id = proc_id;
   INIT_LIST_HEAD(&processor_state.discard_queue);
   processor_state.system_criticality_level = QM;
@@ -67,20 +67,18 @@ void platform_init(uint8_t proc_id) {
 void platform_run() {
   while (1) {
     printf("\n\n\n[Proc %u] System Time: %u ms\n", processor_state.processor_id,
-           system_time);
+           processor_state.system_time);
     scheduler_tick(0);
-    printf("Discard Queue: ");
-    print_queue(&processor_state.discard_queue);
 
     Job *cur, *next;
     list_for_each_entry_safe(cur, next, &processor_state.discard_queue, link) {
-      if (cur->actual_deadline <= system_time) {
+      if (cur->actual_deadline <= processor_state.system_time) {
         list_del(&cur->link);
         release_job(cur, 0);
       }
     }
-    system_time += 1;
-    // usleep(10000);
+    processor_state.system_time += 1;
+    // usleep(500000);
   }
 }
 
