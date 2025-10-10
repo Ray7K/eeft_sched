@@ -76,13 +76,13 @@ float find_slack(uint16_t global_core_id, uint32_t t, float scaling_factor) {
   }
 
   // Demand from jobs already in the ready queue
-  Job *job, *next_job;
-  list_for_each_entry_safe(job, next_job, &core_state->ready_queue, link) {
+  Job *job;
+  list_for_each_entry(job, &core_state->ready_queue, link) {
     if (job->virtual_deadline <= t) {
       demand += ceilf((job->wcet - job->executed_time) / scaling_factor);
     }
   }
-  list_for_each_entry_safe(job, next_job, &core_state->replica_queue, link) {
+  list_for_each_entry(job, &core_state->replica_queue, link) {
     if (job->virtual_deadline <= t) {
       demand += ceilf((job->wcet - job->executed_time) / scaling_factor);
     }
@@ -136,15 +136,15 @@ static bool is_admissible(uint16_t global_core_id, Job *candidate_job) {
                  max_scaling_factor) < time_needed_for_candidate) {
     return false;
   }
-  Job *cur, *next;
-  list_for_each_entry_safe(cur, next, &core_state->replica_queue, link) {
+  Job *cur;
+  list_for_each_entry(cur, &core_state->replica_queue, link) {
     uint32_t deadline = cur->virtual_deadline;
     uint32_t slack = find_slack(global_core_id, deadline, max_scaling_factor);
     if (slack < time_needed_for_candidate) {
       return false;
     }
   }
-  list_for_each_entry_safe(cur, next, &core_state->ready_queue, link) {
+  list_for_each_entry(cur, &core_state->ready_queue, link) {
     uint32_t deadline = cur->virtual_deadline;
     uint32_t slack = find_slack(global_core_id, deadline, max_scaling_factor);
     if (slack < time_needed_for_candidate) {

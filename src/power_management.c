@@ -38,12 +38,12 @@ uint8_t calc_required_dvfs_level(uint16_t global_core_id) {
 
   float min_slack = running_job_slack;
 
-  Job *cur, *next;
-  list_for_each_entry_safe(cur, next, &core_state->ready_queue, link) {
+  Job *cur;
+  list_for_each_entry(cur, &core_state->ready_queue, link) {
     float slack = find_slack(global_core_id, cur->virtual_deadline, 1.0);
     min_slack = (min_slack < slack) ? min_slack : slack;
   }
-  list_for_each_entry_safe(cur, next, &core_state->replica_queue, link) {
+  list_for_each_entry(cur, &core_state->replica_queue, link) {
     float slack = find_slack(global_core_id, cur->virtual_deadline, 1.0);
     min_slack = (min_slack < slack) ? min_slack : slack;
   }
