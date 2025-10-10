@@ -23,7 +23,6 @@ typedef struct {
   uint8_t current_dvfs_level;
 
   uint8_t proc_id;
-
   uint8_t core_id;
 
   uint8_t local_criticality_level;

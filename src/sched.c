@@ -157,9 +157,6 @@ static void handle_job_completion(uint16_t global_core_id) {
   decision_point = true;
   CoreState *core_state = &core_states[global_core_id];
   Job *completed_job = core_state->running_job;
-  printf("Job %d completed on core %d at time %d\n",
-         completed_job->parent_task->id, global_core_id % NUM_CORES_PER_PROC,
-         processor_state.system_time);
 
   if (completed_job == NULL) {
     LOG(LOG_LEVEL_ERROR, "No running job to complete on core %d",
@@ -172,7 +169,7 @@ static void handle_job_completion(uint16_t global_core_id) {
 
   completed_job->state = JOB_STATE_COMPLETED;
 
-  release_job(completed_job, global_core_id);
+  release_job(completed_job);
   core_state->running_job = NULL;
   core_state->is_idle = true;
 }
@@ -313,7 +310,6 @@ static void handle_running_job(uint16_t global_core_id) {
   if (core_state->running_job != NULL) {
     core_state->busy_time += 1;
     core_state->running_job->executed_time +=
-    core_state->work_done += power_get_current_scaling_factor(global_core_id);
         power_get_current_scaling_factor(global_core_id);
 
     LOG(LOG_LEVEL_DEBUG,
@@ -429,12 +425,15 @@ static void reclaim_discarded_jobs(uint16_t global_core_id) {
         add_to_queue_sorted(&core_state->ready_queue, discarded_job);
       }
     } else {
+      pthread_mutex_lock(&processor_state.discard_queue_lock);
       discarded_job->virtual_deadline = discarded_job->actual_deadline;
       add_to_queue_sorted(&processor_state.discard_queue, discarded_job);
+      pthread_mutex_unlock(&processor_state.discard_queue_lock);
     }
   }
 
   Job *cur, *next;
+  pthread_mutex_lock(&processor_state.discard_queue_lock);
   list_for_each_entry_safe(cur, next, &processor_state.discard_queue, link) {
     if (is_admissible(global_core_id, cur)) {
       LOG(LOG_LEVEL_INFO,
@@ -449,6 +448,7 @@ static void reclaim_discarded_jobs(uint16_t global_core_id) {
       }
     }
   }
+  pthread_mutex_unlock(&processor_state.discard_queue_lock);
 }
 
 void scheduler_init() {

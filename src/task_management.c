@@ -1,5 +1,6 @@
 #include "task_management.h"
 #include "list.h"
+#include "log.h"
 #include "sys_config.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -28,17 +29,18 @@ Job *create_job(const Task *parent_task, uint16_t global_core_id) {
     list_del(&new_job->link);
     new_job->parent_task = parent_task;
     new_job->state = JOB_STATE_IDLE;
+    new_job->owner_core_id = global_core_id;
     INIT_LIST_HEAD(&new_job->link);
   }
 
   return new_job;
 }
 
-void release_job(Job *job, uint16_t global_core_id) {
+void release_job(Job *job) {
   if (job == NULL) {
     return;
   }
-  list_add(&job->link, &per_core_free_list[global_core_id]);
+  list_add(&job->link, &per_core_free_list[job->owner_core_id]);
 }
 
 void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add) {
@@ -71,13 +73,13 @@ Job *pop_next_job(struct list_head *queue_head) {
 }
 
 void remove_job_with_parent_task_id(struct list_head *queue_head,
-                                    uint32_t task_id, uint16_t global_core_id) {
+                                    uint32_t task_id) {
   Job *cursor, *next;
 
   list_for_each_entry_safe(cursor, next, queue_head, link) {
     if (cursor->parent_task->id == task_id) {
       list_del(&cursor->link);
-      release_job(cursor, global_core_id);
+      release_job(cursor);
     }
   }
 }

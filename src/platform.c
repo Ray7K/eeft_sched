@@ -4,19 +4,22 @@
 #include "pthread.h"
 #include "sched.h"
 #include "sys_config.h"
-#include "unistd.h"
+#include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 ProcessorState processor_state;
 
 #define SYSTEM_TICK_MS 1
 
+__thread LogThreadContext log_thread_context = {0, 0, false};
+
 static void *timer_thread_func() {
   while (1) {
-    // printf("[Proc %u] System Time: %u ms\n", processor_state.processor_id,
-    // processor_state.system_time);
-    usleep(1000 * SYSTEM_TICK_MS);
+    barrier_wait(&processor_state.core_completion_barrier);
+
     Job *cur, *next;
+    pthread_mutex_lock(&processor_state.discard_queue_lock);
     list_for_each_entry_safe(cur, next, &processor_state.discard_queue, link) {
       if (cur->actual_deadline <= processor_state.system_time) {
         LOG(LOG_LEVEL_INFO, "Releasing job with parent task ID %d",
@@ -25,7 +28,11 @@ static void *timer_thread_func() {
         release_job(cur);
       }
     }
+    pthread_mutex_unlock(&processor_state.discard_queue_lock);
+
     __sync_fetch_and_add(&processor_state.system_time, 1);
+
+    barrier_wait(&processor_state.time_sync_barrier);
   }
   return NULL;
 }
@@ -42,16 +49,8 @@ static void *core_thread_func(void *arg) {
     LOG(LOG_LEVEL_DEBUG, "Core %u finished tick %u", local_core_id,
         processor_state.system_time);
 
-    if (processor_state.system_time > last_tick) {
-      last_tick = processor_state.system_time;
-      scheduler_tick(local_core_id);
-      printf("[Proc %u] Core %u Tick at System Time %u ms\n",
-             processor_state.processor_id, local_core_id,
-             processor_state.system_time);
-    }
-    // Small sleep to prevent the simulation from using 100% host CPU.
-    // This would not exist on bare metal.
-    usleep(500);
+    barrier_wait(&processor_state.core_completion_barrier);
+    barrier_wait(&processor_state.time_sync_barrier);
   }
   return NULL;
 }
@@ -62,18 +61,23 @@ void platform_init(uint8_t proc_id) {
   processor_state.system_time = 0;
   processor_state.processor_id = proc_id;
   INIT_LIST_HEAD(&processor_state.discard_queue);
-  processor_state.system_criticality_level = QM;
+  pthread_mutex_init(&processor_state.discard_queue_lock, NULL);
+  atomic_store(&processor_state.system_criticality_level, QM);
+
+  // Initialize barrier to wait for all cores + the timer thread.
+  barrier_init(&processor_state.core_completion_barrier,
+               NUM_CORES_PER_PROC + 1);
+  barrier_init(&processor_state.time_sync_barrier, NUM_CORES_PER_PROC + 1);
 
   scheduler_init();
 
   LOG(LOG_LEVEL_INFO, "Processor %d Initialization Complete.", proc_id);
 }
 
-void platform_run() {
-  while (1) {
-    printf("\n\n\n[Proc %u] System Time: %u ms\n", processor_state.processor_id,
-           processor_state.system_time);
-    scheduler_tick(0);
+void platform_run(void) {
+  pthread_t timer_thread;
+  pthread_t core_threads[NUM_CORES_PER_PROC];
+  uint8_t local_core_ids[NUM_CORES_PER_PROC];
 
   LOG(LOG_LEVEL_INFO, "Launching threads...");
 
