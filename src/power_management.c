@@ -1,5 +1,6 @@
 #include "power_management.h"
 #include "list.h"
+#include "log.h"
 #include "platform.h"
 #include "sched.h"
 #include <float.h>
@@ -13,7 +14,9 @@ const DVFSLevel dvfs_levels[NUM_DVFS_LEVELS] = {{2000, 1000, 1.0},
                                                 {1200, 600, 0.6},
                                                 {1000, 500, 0.5}};
 
-void power_management_init() { printf("Power Management Initialized.\n"); }
+void power_management_init() {
+  LOG(LOG_LEVEL_INFO, "Power Management Initialized.");
+}
 
 float power_get_current_scaling_factor(uint16_t global_core_id) {
   return dvfs_levels[core_states[global_core_id].current_dvfs_level]
@@ -67,9 +70,10 @@ uint8_t calc_required_dvfs_level(uint16_t global_core_id) {
 void power_set_dvfs_level(uint16_t global_core_id, uint8_t level_idx) {
   if (level_idx < NUM_DVFS_LEVELS) {
     core_states[global_core_id].current_dvfs_level = level_idx;
-    printf("[DVFS] Core %u set to level %u (Freq: %uMHz, Scale: %.2f)\n",
-           global_core_id, level_idx, dvfs_levels[level_idx].frequency_mhz,
-           dvfs_levels[level_idx].scaling_factor);
+    LOG(LOG_LEVEL_DEBUG,
+        "Core %u DVFS level set to %u (Freq: %uMHz, Scale: %.2f)",
+        global_core_id, level_idx, dvfs_levels[level_idx].frequency_mhz,
+        dvfs_levels[level_idx].scaling_factor);
   }
 }
 

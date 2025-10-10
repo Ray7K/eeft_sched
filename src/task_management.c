@@ -82,22 +82,34 @@ void remove_job_with_parent_task_id(struct list_head *queue_head,
   }
 }
 
-void print_queue(struct list_head *queue_head) {
-  Job *cursor, *n;
+static void job_to_str(const Job *job, char *buffer, size_t size) {
+  snprintf(buffer, size, "Job(ID:%u VDL:%u REM:%.2f)", job->parent_task->id,
+           job->virtual_deadline, job->acet - job->executed_time);
+}
 
-  if (queue_head->next == queue_head) {
-    printf("(Queue is empty)\n");
+void log_queue(LogLevel level, const char *name, struct list_head *queue_head) {
+  if (level < current_log_level) {
     return;
   }
 
-  list_for_each_entry_safe(cursor, n, queue_head, link) {
-    printf("Job(ID: %d, Virtual Deadline: %d, Remaining ACET: %.2f)",
-           cursor->parent_task->id, cursor->virtual_deadline,
-           cursor->acet - cursor->executed_time);
+  char queue_str[256];
+  snprintf(queue_str, sizeof(queue_str), "Queue '%s': ", name);
 
-    if (cursor->link.next != queue_head) {
-      printf(" -> ");
+  if (queue_head->next == queue_head) {
+    snprintf(queue_str + strlen(queue_str),
+             sizeof(queue_str) - strlen(queue_str), "%s", "(Empty)");
+  }
+
+  Job *job;
+  list_for_each_entry(job, queue_head, link) {
+    char job_info[64];
+    job_to_str(job, job_info, sizeof(job_info));
+    snprintf(queue_str + strlen(queue_str),
+             sizeof(queue_str) - strlen(queue_str), "%s", job_info);
+    if (job->link.next != queue_head) {
+      strncat(queue_str, " -> ", sizeof(queue_str) - strlen(queue_str) - 1);
     }
   }
-  printf("\n");
+
+  LOG(level, "%s", queue_str);
 }

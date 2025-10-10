@@ -1,5 +1,6 @@
 #include "sched.h"
 #include "list.h"
+#include "log.h"
 #include "power_management.h"
 #include "sys_config.h"
 #include "task_alloc.h"
@@ -162,10 +163,13 @@ static void handle_job_completion(uint16_t global_core_id) {
          processor_state.system_time);
 
   if (completed_job == NULL) {
-    printf("No running job to complete on core %d\n",
-           global_core_id % NUM_CORES_PER_PROC);
+    LOG(LOG_LEVEL_ERROR, "No running job to complete on core %d",
+        global_core_id % NUM_CORES_PER_PROC);
     return;
   }
+
+  LOG(LOG_LEVEL_INFO, "Job %d completed on core %d",
+      completed_job->parent_task->id, global_core_id % NUM_CORES_PER_PROC);
 
   completed_job->state = JOB_STATE_COMPLETED;
 
@@ -182,9 +186,9 @@ static void handle_mode_change(uint16_t global_core_id,
   CoreState *core_state = &core_states[global_core_id];
 
   processor_state.system_criticality_level = new_criticality_level;
-  printf("Mode Change to %d on core %d at time %d\n",
-         processor_state.system_criticality_level,
-         global_core_id % NUM_CORES_PER_PROC, processor_state.system_time);
+  core_state->local_criticality_level = new_criticality_level;
+
+  LOG(LOG_LEVEL_WARN, "Mode Change to %d", core_state->local_criticality_level);
 
   if (core_state->running_job != NULL) {
     Job *running_job = core_state->running_job;
@@ -278,12 +282,13 @@ static void handle_job_arrivals(uint16_t global_core_id) {
       new_job->is_replica = (instance->task_type == Replica);
       new_job->state = JOB_STATE_READY;
 
-      printf("Job %d arrived on core %d with deadline (actual: %d, virtual: "
-             "%d)\n with ACET %.2f and "
-             "WCET %.2f\n",
-             new_job->parent_task->id, global_core_id % NUM_CORES_PER_PROC,
-             new_job->actual_deadline, new_job->virtual_deadline, new_job->acet,
-             new_job->wcet);
+      LOG(LOG_LEVEL_INFO,
+          "Job %d arrived on core %d with deadline (actual: %d, virtual: "
+          "%d) with ACET %.2f and "
+          "WCET %.2f",
+          new_job->parent_task->id, global_core_id % NUM_CORES_PER_PROC,
+          new_job->actual_deadline, new_job->virtual_deadline, new_job->acet,
+          new_job->wcet);
 
       // in case of a job arrival where job's criticality is less than system
       // criticality
@@ -311,9 +316,9 @@ static void handle_running_job(uint16_t global_core_id) {
     core_state->running_job->executed_time +=
         power_get_current_scaling_factor(global_core_id);
 
-    printf(
+    LOG(LOG_LEVEL_DEBUG,
         "Current Job on core %d: Job %d (Remaining WCET: %.2f, Remaining "
-        "ACET: %.2f, Deadline: %d, Executed Time: %.2f)\n",
+        "ACET: %.2f, Deadline: %d, Executed Time: %.2f)",
         global_core_id % NUM_CORES_PER_PROC,
         core_state->running_job->parent_task->id,
         core_state->running_job->wcet - core_state->running_job->executed_time,
@@ -324,9 +329,9 @@ static void handle_running_job(uint16_t global_core_id) {
     if (core_state->running_job->state != JOB_STATE_COMPLETED &&
         processor_state.system_time >
             core_state->running_job->actual_deadline) {
-      printf("Job %d missed its deadline at time %d\n",
-             core_state->running_job->parent_task->id,
-             processor_state.system_time);
+      LOG(LOG_LEVEL_ERROR, "Job %d missed its deadline",
+          core_state->running_job->parent_task->id);
+      LOG(LOG_LEVEL_FATAL, "System Halted due to Deadline Miss");
       exit(1);
     }
 
@@ -336,8 +341,8 @@ static void handle_running_job(uint16_t global_core_id) {
     } else if (core_state->running_job->wcet <=
                core_state->running_job->executed_time) {
       CriticalityLevel new_criticality_level =
-          processor_state.system_criticality_level;
-      for (int level = processor_state.system_criticality_level + 1;
+          core_state->local_criticality_level;
+      for (int level = new_criticality_level + 1;
            level < MAX_CRITICALITY_LEVELS; level++) {
         if (core_state->running_job->executed_time <
             core_state->running_job->parent_task->wcet[level]) {
@@ -414,7 +419,9 @@ static void reclaim_discarded_jobs(uint16_t global_core_id) {
     Job *discarded_job = pop_next_job(&core_state->discard_list);
 
     if (is_admissible(global_core_id, discarded_job)) {
-      printf("Accommodating job from discard list\n");
+      LOG(LOG_LEVEL_INFO,
+          "Accommodating discarded job %d (Original Core ID: %u)",
+          discarded_job->parent_task->id, discarded_job->owner_core_id);
       decision_point = true;
       if (discarded_job->is_replica) {
         add_to_queue_sorted(&core_state->replica_queue, discarded_job);
@@ -430,7 +437,9 @@ static void reclaim_discarded_jobs(uint16_t global_core_id) {
   Job *cur, *next;
   list_for_each_entry_safe(cur, next, &processor_state.discard_queue, link) {
     if (is_admissible(global_core_id, cur)) {
-      printf("Accommodating job from discard queue\n");
+      LOG(LOG_LEVEL_INFO,
+          "Accommodating discarded job %d (Original Core ID: %u)",
+          cur->parent_task->id, cur->owner_core_id);
       decision_point = true;
       list_del(&cur->link);
       if (cur->is_replica) {
@@ -443,7 +452,7 @@ static void reclaim_discarded_jobs(uint16_t global_core_id) {
 }
 
 void scheduler_init() {
-  printf("Initializing Scheduler...\n");
+  LOG(LOG_LEVEL_INFO, "Initializing Scheduler...");
 
   task_management_init();
   power_management_init();
@@ -461,7 +470,7 @@ void scheduler_init() {
     INIT_LIST_HEAD(&core_states[i].discard_list);
   }
 
-  printf("Scheduler Initialized for %d cores.\n", TOTAL_CORES);
+  LOG(LOG_LEVEL_INFO, "Scheduler Initialization Complete.");
 }
 
 void scheduler_tick(uint16_t global_core_id) {
@@ -471,18 +480,21 @@ void scheduler_tick(uint16_t global_core_id) {
 
   CoreState *core_state = &core_states[global_core_id];
 
-  printf("Utilization: %.2f %%\n",
-         core_state->busy_time * 100.0 / (processor_state.system_time + 1));
-  printf("Average Frequency Scaling: %.2f %%\n",
-         core_state->work_done * 100.0 / (processor_state.system_time + 1));
-  printf("Current Criticality Level: %d\n\n",
-         processor_state.system_criticality_level);
+  if (core_state->local_criticality_level !=
+      processor_state.system_criticality_level) {
+    handle_mode_change(global_core_id,
+                       processor_state.system_criticality_level);
+  }
 
-  printf("Ready Queue: ");
-  print_queue(&core_state->ready_queue);
-  printf("Replica Queue: ");
-  print_queue(&core_state->replica_queue);
-  printf("\n");
+  LOG(LOG_LEVEL_INFO, "Utilization: %.2f %%",
+      core_state->busy_time * 100.0 / (processor_state.system_time + 1));
+  LOG(LOG_LEVEL_INFO, "Average Frequency Scaling: %.2f %%",
+      core_state->work_done * 100.0 / (processor_state.system_time + 1));
+  LOG(LOG_LEVEL_INFO, "Current Criticality Level: %d",
+      processor_state.system_criticality_level);
+
+  log_queue(LOG_LEVEL_DEBUG, "Ready Queue", &core_state->ready_queue);
+  log_queue(LOG_LEVEL_DEBUG, "Replica Queue", &core_state->replica_queue);
 
   handle_running_job(global_core_id);
 
