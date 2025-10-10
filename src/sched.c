@@ -40,7 +40,6 @@ static float generate_acet(Job *job) {
     criticality_level = processor_state.system_criticality_level;
   }
   float scaling = (float)percentage / 100.0;
-  criticality_level = 0;
   float acet = scaling * job->parent_task->wcet[criticality_level];
   if (acet == 0) {
     acet = 1;
@@ -313,8 +312,8 @@ static void handle_running_job(uint16_t global_core_id) {
 
   if (core_state->running_job != NULL) {
     core_state->busy_time += 1;
-    core_state->work_done += power_get_current_scaling_factor(global_core_id);
     core_state->running_job->executed_time +=
+    core_state->work_done += power_get_current_scaling_factor(global_core_id);
         power_get_current_scaling_factor(global_core_id);
 
     LOG(LOG_LEVEL_DEBUG,
