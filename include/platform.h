@@ -4,12 +4,14 @@
 #include "ipc.h"
 #include "list.h"
 #include "sys_config.h"
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 
 #define TOTAL_CORES (NUM_PROC * NUM_CORES_PER_PROC)
 
 typedef struct {
-  CriticalityLevel system_criticality_level;
+  _Atomic CriticalityLevel system_criticality_level;
   volatile uint32_t system_time;
   struct list_head discard_queue;
   MessageQueue completion_signal_queue;

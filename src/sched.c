@@ -6,6 +6,7 @@
 #include "task_alloc.h"
 #include "task_management.h"
 #include <math.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -96,16 +97,15 @@ float find_slack(uint16_t global_core_id, uint32_t t, float scaling_factor) {
         instance->core_id == core_state->core_id) {
       const Task *task = find_task_by_id(instance->task_id);
 
-      if (task->criticality_level >= processor_state.system_criticality_level) {
-        uint32_t wcet = task->wcet[processor_state.system_criticality_level];
+      if (task->criticality_level >= core_state->local_criticality_level) {
+        uint32_t wcet = task->wcet[core_state->local_criticality_level];
         uint32_t period = task->period;
 
         uint32_t arrival_time = (current_time / period + 1) * period;
         while (1) {
           uint32_t future_job_deadline =
               arrival_time +
-              instance
-                  ->tuned_deadlines[processor_state.system_criticality_level];
+              instance->tuned_deadlines[core_state->local_criticality_level];
 
           if (future_job_deadline > t) {
             break;
@@ -185,7 +185,8 @@ static void handle_mode_change(uint16_t global_core_id,
   decision_point = true;
   CoreState *core_state = &core_states[global_core_id];
 
-  processor_state.system_criticality_level = new_criticality_level;
+  atomic_store(&processor_state.system_criticality_level,
+               new_criticality_level);
   core_state->local_criticality_level = new_criticality_level;
 
   LOG(LOG_LEVEL_WARN, "Mode Change to %d", core_state->local_criticality_level);
@@ -210,13 +211,13 @@ static void handle_mode_change(uint16_t global_core_id,
     Job *current_job = pop_next_job(&core_state->ready_queue);
     current_job->virtual_deadline =
         current_job->arrival_time +
-        current_job->relative_tuned_deadlines[processor_state
-                                                  .system_criticality_level];
-    current_job->wcet = current_job->parent_task
-                            ->wcet[processor_state.system_criticality_level];
+        current_job
+            ->relative_tuned_deadlines[core_state->local_criticality_level];
+    current_job->wcet =
+        current_job->parent_task->wcet[core_state->local_criticality_level];
 
     if (current_job->parent_task->criticality_level <
-        processor_state.system_criticality_level) {
+        core_state->local_criticality_level) {
       add_to_queue_sorted(&core_state->discard_list, current_job);
     } else {
       add_to_queue_sorted(&new_ready_queue, current_job);
@@ -227,13 +228,13 @@ static void handle_mode_change(uint16_t global_core_id,
     Job *current_job = pop_next_job(&core_state->replica_queue);
     current_job->virtual_deadline =
         current_job->arrival_time +
-        current_job->relative_tuned_deadlines[processor_state
-                                                  .system_criticality_level];
-    current_job->wcet = current_job->parent_task
-                            ->wcet[processor_state.system_criticality_level];
+        current_job
+            ->relative_tuned_deadlines[core_state->local_criticality_level];
+    current_job->wcet =
+        current_job->parent_task->wcet[core_state->local_criticality_level];
 
     if (current_job->parent_task->criticality_level <
-        processor_state.system_criticality_level) {
+        core_state->local_criticality_level) {
       add_to_queue_sorted(&core_state->discard_list, current_job);
     } else {
       add_to_queue_sorted(&new_replica_queue, current_job);
@@ -272,9 +273,9 @@ static void handle_job_arrivals(uint16_t global_core_id) {
           processor_state.system_time + new_job->parent_task->deadline;
       new_job->virtual_deadline =
           processor_state.system_time +
-          instance->tuned_deadlines[processor_state.system_criticality_level];
+          instance->tuned_deadlines[core_state->local_criticality_level];
       new_job->wcet =
-          new_job->parent_task->wcet[processor_state.system_criticality_level];
+          new_job->parent_task->wcet[core_state->local_criticality_level];
 
       new_job->acet = generate_acet(new_job);
       new_job->executed_time = 0;
@@ -293,7 +294,7 @@ static void handle_job_arrivals(uint16_t global_core_id) {
       // in case of a job arrival where job's criticality is less than system
       // criticality
       if (new_job->parent_task->criticality_level <
-          processor_state.system_criticality_level) {
+          core_state->local_criticality_level) {
         add_to_queue_sorted(&core_state->discard_list, new_job);
       } else {
         decision_point = true;
@@ -481,7 +482,7 @@ void scheduler_tick(uint16_t global_core_id) {
   CoreState *core_state = &core_states[global_core_id];
 
   if (core_state->local_criticality_level !=
-      processor_state.system_criticality_level) {
+      atomic_load(&processor_state.system_criticality_level)) {
     handle_mode_change(global_core_id,
                        processor_state.system_criticality_level);
   }
@@ -491,7 +492,7 @@ void scheduler_tick(uint16_t global_core_id) {
   LOG(LOG_LEVEL_INFO, "Average Frequency Scaling: %.2f %%",
       core_state->work_done * 100.0 / (processor_state.system_time + 1));
   LOG(LOG_LEVEL_INFO, "Current Criticality Level: %d",
-      processor_state.system_criticality_level);
+      core_state->local_criticality_level);
 
   log_queue(LOG_LEVEL_DEBUG, "Ready Queue", &core_state->ready_queue);
   log_queue(LOG_LEVEL_DEBUG, "Replica Queue", &core_state->replica_queue);
@@ -512,7 +513,7 @@ void scheduler_tick(uint16_t global_core_id) {
   if (decision_point) {
     if (core_state->running_job != NULL &&
         core_state->running_job->parent_task->criticality_level <
-            processor_state.system_criticality_level) {
+            atomic_load(&processor_state.system_criticality_level)) {
       power_set_dvfs_level(global_core_id, 0);
     } else {
       power_set_dvfs_level(global_core_id,
