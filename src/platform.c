@@ -7,6 +7,7 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 ProcessorState processor_state;
 
@@ -31,6 +32,8 @@ static void *timer_thread_func() {
     pthread_mutex_unlock(&processor_state.discard_queue_lock);
 
     __sync_fetch_and_add(&processor_state.system_time, 1);
+
+    usleep(SYSTEM_TICK_MS * 1000);
 
     barrier_wait(&processor_state.time_sync_barrier);
   }
