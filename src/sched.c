@@ -1,6 +1,7 @@
 #include "sched.h"
 #include "list.h"
 #include "log.h"
+#include "platform.h"
 #include "power_management.h"
 #include "sys_config.h"
 #include "task_alloc.h"
@@ -123,6 +124,24 @@ float find_slack(uint16_t global_core_id, uint32_t t, float scaling_factor) {
   }
 
   return interval_length - demand;
+}
+
+Task *find_next_arrival_task(uint16_t global_core_id) {
+  CoreState *core_state = &core_states[global_core_id];
+
+  for (uint32_t time = processor_state.system_time;; time++) {
+    for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
+      const TaskAllocationMap *instance = &allocation_map[i];
+
+      if (instance->proc_id == core_state->proc_id &&
+          instance->core_id == core_state->core_id) {
+        Task *candidate = find_task_by_id(instance->task_id);
+        if (time % candidate->period == 0) {
+          return candidate;
+        }
+      }
+    }
+  }
 }
 
 static bool is_admissible(uint16_t global_core_id, Job *candidate_job) {
@@ -307,6 +326,8 @@ static void handle_job_arrivals(uint16_t global_core_id) {
 static void handle_running_job(uint16_t global_core_id) {
   CoreState *core_state = &core_states[global_core_id];
 
+  core_state->work_done += power_get_current_scaling_factor(global_core_id);
+
   if (core_state->running_job != NULL) {
     core_state->busy_time += 1;
     core_state->running_job->executed_time +=
@@ -486,6 +507,20 @@ void scheduler_tick(uint16_t global_core_id) {
                        processor_state.system_criticality_level);
   }
 
+  if (core_state->dpm_control_block.in_low_power_state) {
+    if (core_state->dpm_control_block.dpm_end_time <=
+        processor_state.system_time) {
+      core_state->dpm_control_block.in_low_power_state = false;
+      LOG(LOG_LEVEL_INFO, "Exiting low power state...");
+    } else {
+      core_state->sleep_time += 1;
+      LOG(LOG_LEVEL_DEBUG, "Core in low power state");
+      return;
+    }
+  }
+
+  LOG(LOG_LEVEL_INFO, "Sleep: %.2f %%",
+      core_state->sleep_time * 100.0 / (processor_state.system_time + 1));
   LOG(LOG_LEVEL_INFO, "Utilization: %.2f %%",
       core_state->busy_time * 100.0 / (processor_state.system_time + 1));
   LOG(LOG_LEVEL_INFO, "Average Frequency Scaling: %.2f %%",
@@ -496,9 +531,9 @@ void scheduler_tick(uint16_t global_core_id) {
   log_queue(LOG_LEVEL_DEBUG, "Ready Queue", &core_state->ready_queue);
   log_queue(LOG_LEVEL_DEBUG, "Replica Queue", &core_state->replica_queue);
 
-  handle_running_job(global_core_id);
-
   handle_job_arrivals(global_core_id);
+
+  handle_running_job(global_core_id);
 
   reclaim_discarded_jobs(global_core_id);
 
@@ -519,5 +554,9 @@ void scheduler_tick(uint16_t global_core_id) {
                            calc_required_dvfs_level(global_core_id));
     }
     decision_point = false;
+  }
+
+  if (core_state->is_idle) {
+    power_management_set_dpm_interval(global_core_id);
   }
 }

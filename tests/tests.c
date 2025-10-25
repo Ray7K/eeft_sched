@@ -31,9 +31,8 @@ void run_tests(const char *filter) {
 
   printf(COLOR_CYAN "--- Starting Test Run --- \n\n" COLOR_RESET);
 
-  size_t size;
-  TestCase *tests = (TestCase *)getsectiondata(&_mh_execute_header, "__DATA",
-                                               "test_cases", &size);
+  size_t sizet TestCase *tests = (TestCase *)getsectiondata(
+      &_mh_execute_header, "__DATA", "test_cases", &size);
   if (tests == NULL) {
     printf("No test cases found.\n");
     return;

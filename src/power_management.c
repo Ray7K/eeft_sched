@@ -80,3 +80,33 @@ void power_set_dvfs_level(uint16_t global_core_id, uint8_t level_idx) {
 uint8_t power_get_current_dvfs_level(uint16_t global_core_id) {
   return core_states[global_core_id].current_dvfs_level;
 }
+
+void power_management_set_dpm_interval(uint16_t global_core_id) {
+  CoreState *core_state = &core_states[global_core_id];
+  if (core_state->is_idle) {
+    if (core_state->dpm_control_block.in_low_power_state) {
+      return;
+    }
+    const Task *next_arrival_task = find_next_arrival_task(global_core_id);
+    uint64_t next_arrival_time =
+        ((processor_state.system_time / next_arrival_task->period) + 1) *
+        next_arrival_task->period;
+
+    const float slack = next_arrival_time - processor_state.system_time;
+
+    if (slack >= DPM_IDLE_THRESHOLD_TICKS + DPM_ENTRY_LATENCY_TICKS +
+                     DPM_EXIT_LATENCY_TICKS) {
+      core_state->dpm_control_block.in_low_power_state = true;
+      core_state->dpm_control_block.dpm_start_time =
+          processor_state.system_time;
+      core_state->dpm_control_block.dpm_end_time =
+          processor_state.system_time + slack;
+      LOG(LOG_LEVEL_INFO,
+          "Found Slack %.2f. Entering DPM for the interval %d to %d ticks...",
+          slack, core_state->dpm_control_block.dpm_start_time,
+          core_state->dpm_control_block.dpm_end_time);
+    }
+  } else {
+    core_state->dpm_control_block.in_low_power_state = false;
+  }
+}
