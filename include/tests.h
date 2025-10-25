@@ -2,6 +2,7 @@
 #define TESTS_H
 
 #include <stdbool.h>
+#include <stdio.h>
 
 typedef struct TestCase TestCase;
 
@@ -12,6 +13,7 @@ struct TestCase {
   test_func_t func;
   test_func_t setup;
   test_func_t teardown;
+  void *priv;
   unsigned int assertions_executed;
   unsigned int expects_executed;
   unsigned int expects_failed;
