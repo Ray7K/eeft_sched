@@ -537,18 +537,6 @@ void scheduler_tick(uint16_t global_core_id) {
     }
   }
 
-  LOG(LOG_LEVEL_INFO, "Sleep: %.2f %%",
-      core_state->sleep_time * 100.0 / (processor_state.system_time + 1));
-  LOG(LOG_LEVEL_INFO, "Utilization: %.2f %%",
-      core_state->busy_time * 100.0 / (processor_state.system_time + 1));
-  LOG(LOG_LEVEL_INFO, "Average Frequency Scaling: %.2f %%",
-      core_state->work_done * 100.0 / (processor_state.system_time + 1));
-  LOG(LOG_LEVEL_INFO, "Current Criticality Level: %d",
-      core_state->local_criticality_level);
-
-  log_queue(LOG_LEVEL_DEBUG, "Ready Queue", &core_state->ready_queue);
-  log_queue(LOG_LEVEL_DEBUG, "Replica Queue", &core_state->replica_queue);
-
   handle_job_arrivals(global_core_id);
 
   handle_running_job(global_core_id);
