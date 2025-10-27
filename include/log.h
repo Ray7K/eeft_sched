@@ -2,8 +2,13 @@
 #define LOG_H
 
 #include "platform.h"
+#include "ring_buffer.h"
+#include <semaphore.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+extern ring_buffer_t log_queue;
 
 typedef enum {
   LOG_LEVEL_DEBUG,
@@ -21,7 +26,14 @@ typedef struct {
 
 extern LogLevel current_log_level;
 
+extern sem_t log_sem;
+
+extern _Atomic int log_wakeup_pending;
+
 extern __thread LogThreadContext log_thread_context;
+
+void log_system_init(uint8_t proc_id);
+void log_system_shutdown(void);
 
 #define __FILENAME__                                                           \
   (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
@@ -29,6 +41,7 @@ extern __thread LogThreadContext log_thread_context;
 #define LOG(level, fmt, ...)                                                   \
   do {                                                                         \
     if (level >= current_log_level) {                                          \
+      char msg_buf[MAX_LOG_MSG_SIZE];                                          \
       const char *level_str;                                                   \
       switch (level) {                                                         \
       case LOG_LEVEL_DEBUG:                                                    \
@@ -51,14 +64,21 @@ extern __thread LogThreadContext log_thread_context;
         break;                                                                 \
       }                                                                        \
       if (log_thread_context.is_set) {                                         \
-        fprintf(stdout, "[%u] [P%u: C%u] [%s] [%s:%d] " fmt "\n",              \
-                processor_state.system_time, log_thread_context.proc_id,       \
-                log_thread_context.core_id, level_str, __FILENAME__, __LINE__, \
-                ##__VA_ARGS__);                                                \
+        snprintf(msg_buf, sizeof(msg_buf),                                     \
+                 "[%u] [P%u: C%u] [%s] [%s:%d] " fmt "\n",                     \
+                 processor_state.system_time, log_thread_context.proc_id,      \
+                 log_thread_context.core_id, level_str, __FILENAME__,          \
+                 __LINE__, ##__VA_ARGS__);                                     \
       } else {                                                                 \
-        fprintf(stdout, "[%u] [SYS] [%s] [%s:%d] " fmt "\n",                   \
-                processor_state.system_time, level_str, __FILENAME__,          \
-                __LINE__, ##__VA_ARGS__);                                      \
+        snprintf(msg_buf, sizeof(msg_buf),                                     \
+                 "[%u] [SYS] [%s] [%s:%d] " fmt "\n",                          \
+                 processor_state.system_time, level_str, __FILENAME__,         \
+                 __LINE__, ##__VA_ARGS__);                                     \
+      }                                                                        \
+      if (ring_buffer_try_enqueue(&log_queue, msg_buf) == 0) {                 \
+        if (atomic_exchange(&log_wakeup_pending, 1) == 0) {                    \
+          sem_post(&log_sem);                                                  \
+        }                                                                      \
       }                                                                        \
     }                                                                          \
   } while (0)
