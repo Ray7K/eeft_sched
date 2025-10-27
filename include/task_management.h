@@ -56,6 +56,7 @@ Job *peek_next_job(struct list_head *queue_head);
 Job *pop_next_job(struct list_head *queue_head);
 void remove_job_with_parent_task_id(struct list_head *queue_head,
                                     uint32_t task_id);
-void log_queue(LogLevel level, const char *name, struct list_head *queue_head);
+void log_job_queue(LogLevel level, const char *name,
+                   struct list_head *queue_head);
 
 #endif
