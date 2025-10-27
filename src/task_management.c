@@ -22,8 +22,8 @@ void task_management_init(void) {
 }
 
 Job *create_job(const Task *parent_task, uint16_t global_core_id) {
-  Job *new_job =
-      list_first_entry(&per_core_free_list[global_core_id], Job, link);
+  Job *new_job = list_first_entry(
+      &per_core_free_list[global_core_id % NUM_CORES_PER_PROC], Job, link);
 
   if (new_job != NULL) {
     list_del(&new_job->link);
@@ -40,7 +40,8 @@ void release_job(Job *job) {
   if (job == NULL) {
     return;
   }
-  list_add(&job->link, &per_core_free_list[job->owner_core_id]);
+  list_add(&job->link,
+           &per_core_free_list[job->owner_core_id % NUM_CORES_PER_PROC]);
 }
 
 void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add) {
@@ -89,7 +90,8 @@ static void job_to_str(const Job *job, char *buffer, size_t size) {
            job->virtual_deadline, job->acet - job->executed_time);
 }
 
-void log_queue(LogLevel level, const char *name, struct list_head *queue_head) {
+void log_job_queue(LogLevel level, const char *name,
+                   struct list_head *queue_head) {
   if (level < current_log_level) {
     return;
   }

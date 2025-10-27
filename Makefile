@@ -73,6 +73,7 @@ clean:
 # -----------------------------
 $(DEBUG_BIN_DIR)/$(PACKAGE_NAME): $(DEBUG_OBJ_FILES) | $(DEBUG_BIN_DIR)
 	$(CC) $(CFLAGS) -g -fsanitize=address,undefined $^ -o $@
+	dsymutil $(DEBUG_BIN_DIR)/$(PACKAGE_NAME)
 
 $(RELEASE_BIN_DIR)/$(PACKAGE_NAME): $(RELEASE_OBJ_FILES) | $(RELEASE_BIN_DIR)
 	$(CC) $(CFLAGS) -O3 $^ -o $@

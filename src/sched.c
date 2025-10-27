@@ -1,8 +1,10 @@
 #include "sched.h"
+#include "ipc.h"
 #include "list.h"
 #include "log.h"
 #include "platform.h"
 #include "power_management.h"
+#include "ring_buffer.h"
 #include "sys_config.h"
 #include "task_alloc.h"
 #include "task_management.h"
@@ -197,12 +199,59 @@ static void handle_job_completion(uint16_t global_core_id) {
 
   completed_job->state = JOB_STATE_COMPLETED;
 
+  CompletionMessage completion_message = {
+      .completed_task_id = completed_job->parent_task->id,
+      .job_arrival_time = completed_job->arrival_time,
+      .system_time = processor_state.system_time};
+
+  ring_buffer_enqueue(&processor_state.outgoing_completion_msg_queue,
+                      &completion_message);
+
   release_job(completed_job);
   core_state->running_job = NULL;
   core_state->is_idle = true;
 }
 
-// TODO: Implement message passing logic for MPMC in case of mode switch
+static void remove_completed_jobs(uint16_t global_core_id) {
+  CoreState *core_state = &core_states[global_core_id];
+  CompletionMessage *completion_message;
+  ring_buffer_t *incoming_queue =
+      &processor_state.incoming_completion_msg_queue;
+  ring_buffer_iter_read_unsafe(incoming_queue, completion_message,
+                               CompletionMessage) {
+    Job *cur, *next;
+    list_for_each_entry_safe(cur, next, &core_state->replica_queue, link) {
+      if (cur->parent_task->id == completion_message->completed_task_id &&
+          cur->arrival_time == completion_message->job_arrival_time) {
+        list_del(&cur->link);
+        release_job(cur);
+        LOG(LOG_LEVEL_INFO, "Removed replica job %d",
+            completion_message->completed_task_id);
+      }
+    }
+    list_for_each_entry_safe(cur, next, &core_state->ready_queue, link) {
+      if (cur->parent_task->id == completion_message->completed_task_id &&
+          cur->arrival_time == completion_message->job_arrival_time) {
+        list_del(&cur->link);
+        release_job(cur);
+        LOG(LOG_LEVEL_INFO, "Removed ready job %d",
+            completion_message->completed_task_id);
+      }
+    }
+
+    if (core_state->running_job != NULL &&
+        core_state->running_job->parent_task->id ==
+            completion_message->completed_task_id) {
+      Job *running_job = core_state->running_job;
+      core_state->running_job = NULL;
+      running_job->state = JOB_STATE_COMPLETED;
+      release_job(running_job);
+      core_state->is_idle = true;
+      LOG(LOG_LEVEL_INFO, "Removed running job %d",
+          completion_message->completed_task_id);
+    }
+  }
+}
 
 static void handle_mode_change(uint16_t global_core_id,
                                CriticalityLevel new_criticality_level) {
@@ -374,6 +423,7 @@ static void handle_running_job(uint16_t global_core_id) {
           break;
         }
       }
+      ipc_broadcast_criticality_change(new_criticality_level);
       handle_mode_change(global_core_id, new_criticality_level);
     }
   }
@@ -423,6 +473,7 @@ static void dispatch_job(uint16_t global_core_id, Job *job_to_dispatch) {
 
   if (core_state->running_job != NULL) {
     Job *current_job = core_state->running_job;
+
     LOG(LOG_LEVEL_INFO, "Preempting Job %d", current_job->parent_task->id);
     current_job->state = JOB_STATE_READY;
     if (current_job->is_replica) {
@@ -501,6 +552,10 @@ void scheduler_init() {
     INIT_LIST_HEAD(&core_states[i].discard_list);
   }
 
+  for (uint32_t i = 0; i < SYSTEM_TASKS_SIZE; i++) {
+    task_lookup[system_tasks[i].id] = &system_tasks[i];
+  }
+
   LOG(LOG_LEVEL_INFO, "Scheduler Initialization Complete.");
 }
 
@@ -552,6 +607,8 @@ void scheduler_tick(uint16_t global_core_id) {
   handle_running_job(global_core_id);
 
   reclaim_discarded_jobs(global_core_id);
+
+  remove_completed_jobs(global_core_id);
 
   Job *next_job = select_next_job(global_core_id);
 
