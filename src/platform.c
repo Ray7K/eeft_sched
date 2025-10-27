@@ -68,9 +68,9 @@ void platform_init(uint8_t proc_id) {
   atomic_store(&processor_state.system_criticality_level, QM);
 
   // Initialize barrier to wait for all cores + the timer thread.
-  barrier_init(&processor_state.core_completion_barrier,
-               NUM_CORES_PER_PROC + 1);
-  barrier_init(&processor_state.time_sync_barrier, NUM_CORES_PER_PROC + 1);
+  barrier_init(&processor_state.core_completion_barrier, NUM_CORES_PER_PROC + 1,
+               0);
+  barrier_init(&processor_state.time_sync_barrier, NUM_CORES_PER_PROC + 1, 0);
 
   scheduler_init();
 

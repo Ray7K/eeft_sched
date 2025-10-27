@@ -183,7 +183,7 @@ static void test_rb_mpmc_stress(TestCase *test) {
   _Atomic int64_t items_to_consume;
 
   pthread_mutex_init(&results_lock, NULL);
-  barrier_init(&barrier, STRESS_NUM_PRODUCERS + STRESS_NUM_CONSUMERS);
+  barrier_init(&barrier, STRESS_NUM_PRODUCERS + STRESS_NUM_CONSUMERS, 0);
   atomic_init(&items_to_consume, STRESS_TOTAL_ITEMS);
 
   // Create producer threads

@@ -14,7 +14,7 @@ typedef struct {
   pthread_cond_t cond;
 } barrier_t;
 
-int barrier_init(barrier_t *barrier, unsigned n);
+int barrier_init(barrier_t *barrier, unsigned n, int pshared);
 int barrier_destroy(barrier_t *barrier);
 int barrier_wait(barrier_t *barrier);
 
