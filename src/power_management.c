@@ -88,6 +88,15 @@ void power_management_set_dpm_interval(uint16_t global_core_id) {
       return;
     }
     const Task *next_arrival_task = find_next_arrival_task(global_core_id);
+    if (next_arrival_task == NULL) {
+      LOG(LOG_LEVEL_INFO,
+          "No upcoming task arrivals. Entering indefinite low power state...");
+      core_state->dpm_control_block.in_low_power_state = true;
+      core_state->dpm_control_block.dpm_start_time =
+          processor_state.system_time;
+      core_state->dpm_control_block.dpm_end_time = UINT32_MAX;
+      return;
+    }
     uint64_t next_arrival_time =
         ((processor_state.system_time / next_arrival_task->period) + 1) *
         next_arrival_task->period;

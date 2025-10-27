@@ -126,22 +126,34 @@ float find_slack(uint16_t global_core_id, uint32_t t, float scaling_factor) {
   return interval_length - demand;
 }
 
-Task *find_next_arrival_task(uint16_t global_core_id) {
+const Task *find_next_arrival_task(uint16_t global_core_id) {
   CoreState *core_state = &core_states[global_core_id];
+  const Task *next_task = NULL;
+  uint32_t min_arrival_time = UINT32_MAX;
 
-  for (uint32_t time = processor_state.system_time;; time++) {
-    for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
-      const TaskAllocationMap *instance = &allocation_map[i];
+  for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
+    const TaskAllocationMap *instance = &allocation_map[i];
 
-      if (instance->proc_id == core_state->proc_id &&
-          instance->core_id == core_state->core_id) {
-        Task *candidate = find_task_by_id(instance->task_id);
-        if (time % candidate->period == 0) {
-          return candidate;
-        }
+    if (instance->proc_id == core_state->proc_id &&
+        instance->core_id == core_state->core_id) {
+      const Task *task = find_task_by_id(instance->task_id);
+      if (!task || task->period == 0) {
+        continue;
+      }
+
+      uint32_t current_time = processor_state.system_time;
+      uint32_t remainder = current_time % task->period;
+      uint32_t next_arrival = (remainder == 0)
+                                  ? current_time
+                                  : current_time + (task->period - remainder);
+
+      if (next_arrival < min_arrival_time) {
+        min_arrival_time = next_arrival;
+        next_task = task;
       }
     }
   }
+  return next_task;
 }
 
 static bool is_admissible(uint16_t global_core_id, Job *candidate_job) {
