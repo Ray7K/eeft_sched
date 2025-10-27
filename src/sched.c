@@ -19,6 +19,8 @@ CoreState core_states[TOTAL_CORES];
 
 static bool decision_point;
 
+static const Task *task_lookup[MAX_TASKS + 1];
+
 static float generate_acet(Job *job) {
   uint8_t criticality_chance = rand() % 100;
   CriticalityLevel criticality_level = job->parent_task->criticality_level;
@@ -48,13 +50,10 @@ static float generate_acet(Job *job) {
   return acet;
 }
 
-static Task *find_task_by_id(uint32_t task_id) {
-  for (uint32_t i = 0; i < SYSTEM_TASKS_SIZE; i++) {
-    if (system_tasks[i].id == task_id) {
-      return (Task *)&system_tasks[i];
-    }
-  }
-  return NULL;
+static const Task *find_task_by_id(uint32_t task_id) {
+  if (task_id > MAX_TASKS)
+    return NULL;
+  return task_lookup[task_id];
 }
 
 float find_slack(uint16_t global_core_id, uint32_t t, float scaling_factor) {
