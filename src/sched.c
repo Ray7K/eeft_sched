@@ -190,13 +190,11 @@ static void handle_job_completion(uint16_t global_core_id) {
   Job *completed_job = core_state->running_job;
 
   if (completed_job == NULL) {
-    LOG(LOG_LEVEL_ERROR, "No running job to complete on core %d",
-        global_core_id % NUM_CORES_PER_PROC);
+    LOG(LOG_LEVEL_ERROR, "No running job to complete");
     return;
   }
 
-  LOG(LOG_LEVEL_INFO, "Job %d completed on core %d",
-      completed_job->parent_task->id, global_core_id % NUM_CORES_PER_PROC);
+  LOG(LOG_LEVEL_INFO, "Job %d completed", completed_job->parent_task->id);
 
   completed_job->state = JOB_STATE_COMPLETED;
 
@@ -280,7 +278,7 @@ static void handle_job_arrivals(uint16_t global_core_id) {
 
     if (instance->proc_id == core_state->proc_id &&
         instance->core_id == core_state->core_id) {
-      Task *task = find_task_by_id(instance->task_id);
+      const Task *task = find_task_by_id(instance->task_id);
 
       if (processor_state.system_time % task->period != 0) {
         continue;
@@ -311,12 +309,11 @@ static void handle_job_arrivals(uint16_t global_core_id) {
       new_job->state = JOB_STATE_READY;
 
       LOG(LOG_LEVEL_INFO,
-          "Job %d arrived on core %d with deadline (actual: %d, virtual: "
+          "Job %d arrived with deadline (actual: %d, virtual: "
           "%d) with ACET %.2f and "
           "WCET %.2f",
-          new_job->parent_task->id, global_core_id % NUM_CORES_PER_PROC,
-          new_job->actual_deadline, new_job->virtual_deadline, new_job->acet,
-          new_job->wcet);
+          new_job->parent_task->id, new_job->actual_deadline,
+          new_job->virtual_deadline, new_job->acet, new_job->wcet);
 
       // in case of a job arrival where job's criticality is less than system
       // criticality
@@ -346,9 +343,8 @@ static void handle_running_job(uint16_t global_core_id) {
         power_get_current_scaling_factor(global_core_id);
 
     LOG(LOG_LEVEL_DEBUG,
-        "Current Job on core %d: Job %d (Remaining WCET: %.2f, Remaining "
+        "Current Job %d (Remaining WCET: %.2f, Remaining "
         "ACET: %.2f, Deadline: %d, Executed Time: %.2f)",
-        global_core_id % NUM_CORES_PER_PROC,
         core_state->running_job->parent_task->id,
         core_state->running_job->wcet - core_state->running_job->executed_time,
         core_state->running_job->acet - core_state->running_job->executed_time,
@@ -428,6 +424,7 @@ static void dispatch_job(uint16_t global_core_id, Job *job_to_dispatch) {
 
   if (core_state->running_job != NULL) {
     Job *current_job = core_state->running_job;
+    LOG(LOG_LEVEL_INFO, "Preempting Job %d", current_job->parent_task->id);
     current_job->state = JOB_STATE_READY;
     if (current_job->is_replica) {
       add_to_queue_sorted(&core_state->replica_queue, current_job);
@@ -439,6 +436,7 @@ static void dispatch_job(uint16_t global_core_id, Job *job_to_dispatch) {
   core_state->running_job = job_to_dispatch;
   core_state->is_idle = false;
   job_to_dispatch->state = JOB_STATE_RUNNING;
+  LOG(LOG_LEVEL_INFO, "Dispatching Job %d", job_to_dispatch->parent_task->id);
 }
 
 static void reclaim_discarded_jobs(uint16_t global_core_id) {
@@ -495,6 +493,7 @@ void scheduler_init() {
     core_states[i].core_id = i % NUM_CORES_PER_PROC;
     core_states[i].running_job = NULL;
     core_states[i].is_idle = true;
+    core_states[i].work_done = 0.0;
     core_states[i].busy_time = 0;
     core_states[i].current_dvfs_level = 0;
 
