@@ -134,7 +134,7 @@ typedef struct {
 } mpmc_thread_data_t;
 
 // Producer thread function
-void *producer_func(void *arg) {
+static void *producer_func(void *arg) {
   mpmc_thread_data_t *data = arg;
   barrier_wait(data->barrier);
 
@@ -147,7 +147,7 @@ void *producer_func(void *arg) {
 }
 
 // Consumer thread function
-void *consumer_func(void *arg) {
+static void *consumer_func(void *arg) {
   mpmc_thread_data_t *data = arg;
   barrier_wait(data->barrier);
 

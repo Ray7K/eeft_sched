@@ -33,7 +33,7 @@ typedef struct {
   uint8_t local_criticality_level;
 } CoreState;
 
-void scheduler_init();
+void scheduler_init(void);
 
 void scheduler_tick(uint16_t global_core_id);
 

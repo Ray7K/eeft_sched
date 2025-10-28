@@ -22,10 +22,10 @@ typedef struct {
   CriticalityLevel new_level;
 } CriticalityChangeMessage;
 
-void ipc_thread_init();
+void ipc_thread_init(void);
 void ipc_broadcast_criticality_change(CriticalityLevel new_level);
-void ipc_send_completion_messages();
-void ipc_receive_completion_messages();
-void ipc_cleanup();
+void ipc_send_completion_messages(void);
+void ipc_receive_completion_messages(void);
+void ipc_cleanup(void);
 
 #endif

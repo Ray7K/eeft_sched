@@ -34,6 +34,8 @@ extern ProcessorState processor_state;
 
 void platform_init(uint8_t proc_id);
 
-void platform_run();
+void platform_run(void);
+
+void platform_cleanup(void);
 
 #endif

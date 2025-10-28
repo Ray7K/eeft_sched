@@ -24,7 +24,7 @@ static double get_time_ms(void) {
   return (ts.tv_sec * 1000.0) + (ts.tv_nsec / 1e6);
 }
 
-void run_tests(const char *filter) {
+static void run_tests(const char *filter) {
   tests_run = 0;
   tests_passed = 0;
   tests_failed = 0;

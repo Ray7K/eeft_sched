@@ -17,7 +17,9 @@ barrier_t *proc_barrier __attribute__((weak)) = NULL;
 
 __thread LogThreadContext log_thread_context = {0, 0, false};
 
-static void *timer_thread_func() {
+static void *timer_thread_func(void *arg) {
+  (void)arg;
+
   while (1) {
     barrier_wait(&processor_state.core_completion_barrier);
     ring_buffer_clear(&processor_state.incoming_completion_msg_queue);
@@ -69,7 +71,7 @@ static void *core_thread_func(void *arg) {
   return NULL;
 }
 
-void platform_cleanup() {
+void platform_cleanup(void) {
   LOG(LOG_LEVEL_INFO, "Cleaning up platform...");
   log_system_shutdown();
   pthread_mutex_destroy(&processor_state.discard_queue_lock);
@@ -78,7 +80,7 @@ void platform_cleanup() {
   ipc_cleanup();
 }
 
-void platform_sigint_handler(int sig) {
+static void platform_sigint_handler(int sig) {
   (void)sig;
   platform_cleanup();
   exit(0);

@@ -14,7 +14,7 @@ const DVFSLevel dvfs_levels[NUM_DVFS_LEVELS] = {{2000, 1000, 1.0},
                                                 {1200, 600, 0.6},
                                                 {1000, 500, 0.5}};
 
-void power_management_init() {
+void power_management_init(void) {
   LOG(LOG_LEVEL_INFO, "Power Management Initialized.");
 }
 

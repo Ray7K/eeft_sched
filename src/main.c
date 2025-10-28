@@ -3,18 +3,24 @@
 #include "platform.h"
 #include "sys_config.h"
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 LogLevel current_log_level = LOG_LEVEL_DEBUG;
 
 barrier_t *proc_barrier = NULL;
 
-void sigint_handler(int signum) {}
+static void sigint_handler(int signum) { (void)signum; }
 
-int main() {
+int main(int argc, char *argv[]) {
+  srand((unsigned)time(NULL));
+
+  (void)argc;
+  (void)argv;
 
   signal(SIGINT, sigint_handler);
 

@@ -26,7 +26,7 @@ static _Atomic uint64_t g_incoming_seq[MESSAGE_QUEUE_SIZE];
 static CompletionMessage g_outgoing_buf[MESSAGE_QUEUE_SIZE];
 static _Atomic uint64_t g_outgoing_seq[MESSAGE_QUEUE_SIZE];
 
-void ipc_thread_init() {
+void ipc_thread_init(void) {
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd < 0) {
     perror("socket() failed");
@@ -121,7 +121,7 @@ void ipc_thread_init() {
       MCAST_GROUP, MCAST_PORT);
 }
 
-void ipc_receive_completion_messages() {
+void ipc_receive_completion_messages(void) {
   LOG(LOG_LEVEL_DEBUG, "Checking for incoming completion messages...");
   char packet_buf[1 + (MESSAGE_QUEUE_SIZE * sizeof(CompletionMessage))];
   ssize_t len;
@@ -142,7 +142,7 @@ void ipc_receive_completion_messages() {
 
     PacketType pkt_type = (PacketType)packet_buf[0];
     char *payload = packet_buf + 1;
-    ssize_t payload_len = len - 1;
+    size_t payload_len = (size_t)len - 1;
 
     if (pkt_type == PACKET_TYPE_CRITICALITY_CHANGE &&
         payload_len == sizeof(CriticalityChangeMessage)) {
@@ -158,9 +158,9 @@ void ipc_receive_completion_messages() {
         atomic_store(&processor_state.system_criticality_level, msg.new_level);
       }
     } else if (pkt_type == PACKET_TYPE_COMPLETION) {
-      int num_msgs = payload_len / sizeof(CompletionMessage);
+      size_t num_msgs = payload_len / sizeof(CompletionMessage);
 
-      for (int i = 0; i < num_msgs; i++) {
+      for (size_t i = 0; i < num_msgs; i++) {
         CompletionMessage msg;
         memcpy(&msg, payload + (i * sizeof(CompletionMessage)),
                sizeof(CompletionMessage));
@@ -190,10 +190,10 @@ void ipc_broadcast_criticality_change(CriticalityLevel new_level) {
          sizeof(mcast_addr));
 }
 
-void ipc_send_completion_messages() {
+void ipc_send_completion_messages(void) {
   char packet_buf[1 + (MESSAGE_QUEUE_SIZE * sizeof(CompletionMessage))];
 
-  int num_msgs = 0;
+  size_t num_msgs = 0;
 
   packet_buf[0] = PACKET_TYPE_COMPLETION;
 
@@ -213,7 +213,7 @@ void ipc_send_completion_messages() {
   }
 
   if (num_msgs > 0) {
-    ssize_t len = 1 + (num_msgs * sizeof(CompletionMessage));
+    size_t len = 1 + (num_msgs * sizeof(CompletionMessage));
 
     ssize_t sent_len =
         sendto(sockfd, packet_buf, len, 0, (struct sockaddr *)&mcast_addr,
@@ -221,13 +221,13 @@ void ipc_send_completion_messages() {
 
     if (sent_len < 0) {
       perror("sendto() failed");
-    } else if (sent_len != len) {
+    } else if ((size_t)sent_len != len) {
       fprintf(stderr, "Warning: sendto() sent partial packet!\n");
     }
   }
 }
 
-void ipc_cleanup() {
+void ipc_cleanup(void) {
   if (sockfd >= 0) {
     struct ip_mreq mreq;
     mreq.imr_multiaddr.s_addr = inet_addr(MCAST_GROUP);

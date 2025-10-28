@@ -43,7 +43,7 @@ typedef struct Job {
   struct list_head link;
 } Job;
 
-void task_management_init();
+void task_management_init(void);
 
 Task *create_task(uint32_t id, uint32_t period[], uint32_t deadline[],
                   uint32_t wcet[], uint8_t criticality_level,

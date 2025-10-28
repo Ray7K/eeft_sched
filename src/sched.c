@@ -23,14 +23,17 @@ static bool decision_point;
 
 static const Task *task_lookup[MAX_TASKS + 1];
 
+static inline float rand_between(float min, float max) {
+  return min + (float)rand() / (float)RAND_MAX * (max - min);
+}
+
 static float generate_acet(Job *job) {
   uint8_t criticality_chance = rand() % 100;
   CriticalityLevel criticality_level = job->parent_task->criticality_level;
 
   if (criticality_chance < 1) {
     criticality_level = ASIL_D;
-  }
-  if (criticality_chance < 5) {
+  } else if (criticality_chance < 5) {
     criticality_level = ASIL_C;
   } else if (criticality_chance < 15) {
     criticality_level = ASIL_B;
@@ -40,15 +43,13 @@ static float generate_acet(Job *job) {
     criticality_level = QM;
   }
 
-  uint8_t percentage = rand() % 100;
   if (criticality_level < processor_state.system_criticality_level) {
     criticality_level = processor_state.system_criticality_level;
   }
-  float scaling = (float)percentage / 100.0;
-  float acet = scaling * job->parent_task->wcet[criticality_level];
-  if (acet == 0) {
-    acet = 1;
-  }
+
+  float acet =
+      rand_between(0.01f, 1.0f) * job->parent_task->wcet[criticality_level];
+
   return acet;
 }
 
@@ -473,7 +474,6 @@ static void dispatch_job(uint16_t global_core_id, Job *job_to_dispatch) {
 
   if (core_state->running_job != NULL) {
     Job *current_job = core_state->running_job;
-
     LOG(LOG_LEVEL_INFO, "Preempting Job %d", current_job->parent_task->id);
     current_job->state = JOB_STATE_READY;
     if (current_job->is_replica) {
@@ -532,7 +532,7 @@ static void reclaim_discarded_jobs(uint16_t global_core_id) {
   pthread_mutex_unlock(&processor_state.discard_queue_lock);
 }
 
-void scheduler_init() {
+void scheduler_init(void) {
   LOG(LOG_LEVEL_INFO, "Initializing Scheduler...");
 
   task_management_init();
