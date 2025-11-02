@@ -17,7 +17,7 @@ typedef struct {
   bool in_low_power_state;
 } DPMControlBlock;
 
-#define NUM_DVFS_LEVELS 5
+#define NUM_DVFS_LEVELS 6
 
 #define DPM_EXIT_LATENCY_TICKS 1
 #define DPM_ENTRY_LATENCY_TICKS 1

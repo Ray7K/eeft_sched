@@ -8,11 +8,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const DVFSLevel dvfs_levels[NUM_DVFS_LEVELS] = {{2000, 1000, 1.0},
-                                                {1800, 900, 0.9},
-                                                {1500, 750, 0.75},
-                                                {1200, 600, 0.6},
-                                                {1000, 500, 0.5}};
+const DVFSLevel dvfs_levels[NUM_DVFS_LEVELS] = {
+    {2000, 1000, 1.0f}, {1800, 900, 0.9f}, {1500, 750, 0.75f},
+    {1200, 600, 0.6f},  {1000, 500, 0.5f}, {800, 300, 0.3f}};
 
 void power_management_init(void) {
   LOG(LOG_LEVEL_INFO, "Power Management Initialized.");
