@@ -68,7 +68,6 @@ static inline int ring_buffer_enqueue(ring_buffer *rb, void *elem) {
 }
 
 static inline int ring_buffer_try_dequeue(ring_buffer *rb, void *elem) {
-  // printf("Trying Dequeue\n");
   uint64_t head = atomic_load(&rb->head);
 
   if (atomic_load_explicit(&rb->seq[head % rb->buf_size],

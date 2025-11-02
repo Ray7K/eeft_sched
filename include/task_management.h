@@ -26,6 +26,7 @@ typedef enum {
 } JobState;
 
 typedef struct Job {
+  void *next_free;
   const Task *parent_task;
 
   uint32_t arrival_time;
@@ -46,12 +47,12 @@ typedef struct Job {
 void task_management_init(void);
 
 Job *create_job(const Task *parent_task, uint16_t global_core_id);
-void release_job(Job *job);
+void release_job(Job *job, uint16_t global_core_id);
 void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add);
 Job *peek_next_job(struct list_head *queue_head);
 Job *pop_next_job(struct list_head *queue_head);
 void remove_job_with_parent_task_id(struct list_head *queue_head,
-                                    uint32_t task_id);
+                                    uint32_t task_id, uint16_t global_core_id);
 void log_job_queue(LogLevel level, const char *name,
                    struct list_head *queue_head);
 

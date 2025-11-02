@@ -1,5 +1,6 @@
 #include "platform.h"
 #include "ipc.h"
+#include "list.h"
 #include "log.h"
 #include "sched.h"
 #include "sys_config.h"
@@ -35,7 +36,7 @@ static void *timer_thread_func(void *arg) {
         LOG(LOG_LEVEL_INFO, "Releasing job with parent task ID %d",
             cur->parent_task->id);
         list_del(&cur->link);
-        release_job(cur);
+        release_job(cur, NUM_CORES_PER_PROC);
       }
     }
     pthread_mutex_unlock(&processor_state.discard_queue_lock);

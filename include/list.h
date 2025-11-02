@@ -46,15 +46,15 @@ static inline void list_del(struct list_head *entry) {
   ((ptr)->next == (ptr) ? NULL : list_entry((ptr)->next, type, member))
 
 #define list_for_each_entry(pos, head, member)                                 \
-  for (pos = list_entry((head)->next, __typeof__(*pos), member);               \
-       &pos->member != (head);                                                 \
-       pos = list_entry(pos->member.next, __typeof__(*pos), member))
+  for ((pos) = list_entry((head)->next, __typeof__(*(pos)), member);           \
+       &(pos)->member != (head);                                               \
+       (pos) = list_entry((pos)->member.next, __typeof__(*(pos)), member))
 
 #define list_for_each_entry_safe(pos, n, head, member)                         \
-  for (pos = list_entry((head)->next, __typeof__(*pos), member),               \
-      n = list_entry(pos->member.next, __typeof__(*pos), member);              \
-       &pos->member != (head);                                                 \
-       pos = n, n = list_entry(n->member.next, __typeof__(*pos), member))
+  for ((pos) = list_entry((head)->next, __typeof__(*(pos)), member),           \
+      (n) = list_entry((pos)->member.next, __typeof__(*(pos)), member);        \
+       &(pos)->member != (head); (pos) = (n),                                  \
+      (n) = list_entry((n)->member.next, __typeof__(*(pos)), member))
 
 static inline bool list_empty(const struct list_head *head) {
   return head->next == head;

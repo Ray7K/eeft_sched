@@ -208,7 +208,7 @@ static void handle_job_completion(uint16_t global_core_id) {
   ring_buffer_enqueue(&processor_state.outgoing_completion_msg_queue,
                       &outgoing_msg);
 
-  release_job(completed_job);
+  release_job(completed_job, global_core_id);
   core_state->running_job = NULL;
   core_state->is_idle = true;
 }
@@ -223,7 +223,7 @@ static void remove_completed_jobs(uint16_t global_core_id) {
       if (cur->parent_task->id == incoming_msg->completed_task_id &&
           cur->arrival_time == incoming_msg->job_arrival_time) {
         list_del(&cur->link);
-        release_job(cur);
+        release_job(cur, global_core_id);
         LOG(LOG_LEVEL_INFO, "Removed replica job %d",
             incoming_msg->completed_task_id);
       }
@@ -232,7 +232,7 @@ static void remove_completed_jobs(uint16_t global_core_id) {
       if (cur->parent_task->id == incoming_msg->completed_task_id &&
           cur->arrival_time == incoming_msg->job_arrival_time) {
         list_del(&cur->link);
-        release_job(cur);
+        release_job(cur, global_core_id);
         LOG(LOG_LEVEL_INFO, "Removed ready job %d",
             incoming_msg->completed_task_id);
       }
@@ -244,7 +244,7 @@ static void remove_completed_jobs(uint16_t global_core_id) {
       Job *running_job = core_state->running_job;
       core_state->running_job = NULL;
       running_job->state = JOB_STATE_COMPLETED;
-      release_job(running_job);
+      release_job(running_job, global_core_id);
       core_state->is_idle = true;
       LOG(LOG_LEVEL_INFO, "Removed running job %d",
           incoming_msg->completed_task_id);
