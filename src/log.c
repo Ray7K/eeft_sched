@@ -14,7 +14,7 @@ ring_buffer_t log_queue;
 
 static FILE *log_file = NULL;
 static pthread_t logger_thread;
-static volatile _Atomic int shutdown_requested = 0;
+static volatile sig_atomic_t shutdown_requested = 0;
 
 dispatch_semaphore_t log_sem;
 
@@ -71,7 +71,7 @@ void log_system_init(uint8_t proc_id) {
 }
 
 void log_system_shutdown(void) {
-  atomic_store(&shutdown_requested, 1);
+  shutdown_requested = 1;
 
   dispatch_semaphore_signal(log_sem);
 

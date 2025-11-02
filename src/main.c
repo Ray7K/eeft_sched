@@ -52,6 +52,7 @@ int main(int argc, char *argv[]) {
     if (pid == 0) {
       platform_init(proc_id);
       platform_run();
+      exit(0);
     }
   }
 

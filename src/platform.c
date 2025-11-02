@@ -13,14 +13,16 @@ ProcessorState processor_state;
 
 barrier_t *proc_barrier __attribute__((weak)) = NULL;
 
-#define SYSTEM_TICK_MS 1
+static volatile sig_atomic_t shutdown_requested = 0;
+
+#define SYSTEM_TICK_MS 10
 
 __thread LogThreadContext log_thread_context = {0, 0, false};
 
 static void *timer_thread_func(void *arg) {
   (void)arg;
 
-  while (1) {
+  while (!shutdown_requested) {
     barrier_wait(&processor_state.core_completion_barrier);
     ring_buffer_clear(&processor_state.incoming_completion_msg_queue);
 
@@ -60,11 +62,8 @@ static void *core_thread_func(void *arg) {
   log_thread_context.core_id = global_core_id % NUM_CORES_PER_PROC;
   log_thread_context.is_set = true;
 
-  while (1) {
+  while (!shutdown_requested) {
     scheduler_tick(global_core_id);
-    LOG(LOG_LEVEL_DEBUG, "Core %u finished tick %u", global_core_id,
-        processor_state.system_time);
-
     barrier_wait(&processor_state.core_completion_barrier);
     barrier_wait(&processor_state.time_sync_barrier);
   }
@@ -82,8 +81,7 @@ void platform_cleanup(void) {
 
 static void platform_sigint_handler(int sig) {
   (void)sig;
-  platform_cleanup();
-  exit(0);
+  shutdown_requested = 1;
 }
 
 void platform_init(uint8_t proc_id) {
@@ -139,4 +137,5 @@ void platform_run(void) {
     pthread_join(core_threads[i], NULL);
   }
   pthread_join(timer_thread, NULL);
+  platform_cleanup();
 }
