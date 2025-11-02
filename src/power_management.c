@@ -70,9 +70,8 @@ uint8_t calc_required_dvfs_level(uint16_t global_core_id) {
 void power_set_dvfs_level(uint16_t global_core_id, uint8_t level_idx) {
   if (level_idx < NUM_DVFS_LEVELS) {
     core_states[global_core_id].current_dvfs_level = level_idx;
-    LOG(LOG_LEVEL_DEBUG,
-        "Core %u DVFS level set to %u (Freq: %uMHz, Scale: %.2f)",
-        global_core_id, level_idx, dvfs_levels[level_idx].frequency_mhz,
+    LOG(LOG_LEVEL_DEBUG, "DVFS level set to %u (Freq: %uMHz, Scale: %.2f)",
+        level_idx, dvfs_levels[level_idx].frequency_mhz,
         dvfs_levels[level_idx].scaling_factor);
   }
 }

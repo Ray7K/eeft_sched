@@ -153,8 +153,10 @@ void ipc_receive_completion_messages(void) {
               atomic_load(&processor_state.system_criticality_level) &&
           msg.new_level < MAX_CRITICALITY_LEVELS) {
         LOG(LOG_LEVEL_WARN,
-            "Received criticality change to level %d from %s:%d", msg.new_level,
-            inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port));
+            "Received criticality change to level %d from "
+            "%s:%d",
+            msg.new_level, inet_ntoa(sender_addr.sin_addr),
+            ntohs(sender_addr.sin_port));
         atomic_store(&processor_state.system_criticality_level, msg.new_level);
       }
     } else if (pkt_type == PACKET_TYPE_COMPLETION) {
@@ -182,9 +184,12 @@ void ipc_receive_completion_messages(void) {
 }
 
 void ipc_broadcast_criticality_change(CriticalityLevel new_level) {
+  LOG(LOG_LEVEL_WARN, "Broadcasting criticality change to level %d", new_level);
   char packet[1 + sizeof(CriticalityChangeMessage)];
   packet[0] = PACKET_TYPE_CRITICALITY_CHANGE;
-  CriticalityChangeMessage msg = {.new_level = new_level};
+  CriticalityChangeMessage msg = {
+      .new_level = new_level,
+  };
   memcpy(packet + 1, &msg, sizeof(CriticalityChangeMessage));
   sendto(sockfd, packet, sizeof(packet), 0, (struct sockaddr *)&mcast_addr,
          sizeof(mcast_addr));

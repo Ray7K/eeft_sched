@@ -384,21 +384,10 @@ static void handle_job_arrivals(uint16_t global_core_id) {
 static void handle_running_job(uint16_t global_core_id) {
   CoreState *core_state = &core_states[global_core_id];
 
-  core_state->work_done += power_get_current_scaling_factor(global_core_id);
-
   if (core_state->running_job != NULL) {
-    core_state->busy_time += 1;
     core_state->running_job->executed_time +=
         power_get_current_scaling_factor(global_core_id);
 
-    LOG(LOG_LEVEL_DEBUG,
-        "Current Job %d (Remaining WCET: %.2f, Remaining "
-        "ACET: %.2f, Deadline: %d, Executed Time: %.2f)",
-        core_state->running_job->parent_task->id,
-        core_state->running_job->wcet - core_state->running_job->executed_time,
-        core_state->running_job->acet - core_state->running_job->executed_time,
-        core_state->running_job->actual_deadline,
-        core_state->running_job->executed_time);
     // Incase job isn't able to meet deadline
     if (core_state->running_job->state != JOB_STATE_COMPLETED &&
         processor_state.system_time >
@@ -543,8 +532,6 @@ void scheduler_init(void) {
     core_states[i].core_id = i % NUM_CORES_PER_PROC;
     core_states[i].running_job = NULL;
     core_states[i].is_idle = true;
-    core_states[i].work_done = 0.0;
-    core_states[i].busy_time = 0;
     core_states[i].current_dvfs_level = 0;
 
     INIT_LIST_HEAD(&core_states[i].ready_queue);
@@ -562,14 +549,18 @@ void scheduler_init(void) {
 static inline void log_core_state(uint16_t global_core_id) {
   CoreState *core_state = &core_states[global_core_id];
 
-  LOG(LOG_LEVEL_INFO, "Sleep: %.2f %%",
-      core_state->sleep_time * 100.0 / (processor_state.system_time + 1));
-  LOG(LOG_LEVEL_INFO, "Utilization: %.2f %%",
-      core_state->busy_time * 100.0 / (processor_state.system_time + 1));
-  LOG(LOG_LEVEL_INFO, "Average Frequency Scaling: %.2f %%",
-      core_state->work_done * 100.0 /
-          (processor_state.system_time + 1 - core_state->sleep_time));
-  LOG(LOG_LEVEL_INFO, "Current Criticality Level: %d",
+  if (core_state->is_idle) {
+    LOG(LOG_LEVEL_DEBUG, "Status: IDLE");
+  } else {
+    LOG(LOG_LEVEL_DEBUG, "Status: RUNNING -> Job %d",
+        core_state->running_job ? core_state->running_job->parent_task->id
+                                : -1);
+  }
+
+  LOG(LOG_LEVEL_DEBUG, "DVFS Level: %u, Frequency Scaling: %.2f",
+      core_state->current_dvfs_level,
+      power_get_current_scaling_factor(global_core_id));
+  LOG(LOG_LEVEL_DEBUG, "Criticality Level: %u",
       core_state->local_criticality_level);
 
   log_job_queue(LOG_LEVEL_DEBUG, "Ready Queue", &core_state->ready_queue);
@@ -580,8 +571,6 @@ void scheduler_tick(uint16_t global_core_id) {
   if (global_core_id >= TOTAL_CORES) {
     return;
   }
-
-  log_core_state(global_core_id);
 
   CoreState *core_state = &core_states[global_core_id];
   if (core_state->local_criticality_level !=
@@ -594,7 +583,7 @@ void scheduler_tick(uint16_t global_core_id) {
     if (core_state->dpm_control_block.dpm_end_time <=
         processor_state.system_time) {
       core_state->dpm_control_block.in_low_power_state = false;
-      LOG(LOG_LEVEL_INFO, "Exiting low power state...");
+      LOG(LOG_LEVEL_INFO, "Exiting low power state");
     } else {
       core_state->sleep_time += 1;
       LOG(LOG_LEVEL_DEBUG, "Core in low power state");
@@ -632,4 +621,6 @@ void scheduler_tick(uint16_t global_core_id) {
   if (core_state->is_idle) {
     power_management_set_dpm_interval(global_core_id);
   }
+
+  log_core_state(global_core_id);
 }
