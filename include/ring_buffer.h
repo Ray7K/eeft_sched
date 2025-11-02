@@ -3,11 +3,14 @@
 
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
+#define CACHE_LINE_SIZE_BYTES 64
+
 typedef struct {
-  _Atomic uint64_t head __attribute__((aligned(64)));
-  _Atomic uint64_t tail __attribute__((aligned(64)));
+  _Atomic uint64_t head __attribute__((aligned(CACHE_LINE_SIZE_BYTES)));
+  _Atomic uint64_t tail __attribute__((aligned(CACHE_LINE_SIZE_BYTES)));
   _Atomic uint64_t *seq;
   uint64_t buf_size;
   uint64_t buf_elem_size;
@@ -65,6 +68,7 @@ static inline int ring_buffer_enqueue(ring_buffer_t *rb, void *elem) {
 }
 
 static inline int ring_buffer_try_dequeue(ring_buffer_t *rb, void *elem) {
+  // printf("Trying Dequeue\n");
   uint64_t head = atomic_load(&rb->head);
 
   if (atomic_load_explicit(&rb->seq[head % rb->buf_size],
@@ -110,11 +114,11 @@ static inline void ring_buffer_clear(ring_buffer_t *rb) {
   atomic_store_explicit(&rb->head, tail, memory_order_release);
 }
 
-#define ring_buffer_iter_read_unsafe(rb, elem_ptr, elem_type)                  \
+#define ring_buffer_iter_read_unsafe(rb, elem_ptr)                             \
   for (uint64_t idx = atomic_load(&(rb)->head);                                \
        idx < atomic_load(&(rb)->tail); idx++)                                  \
-    if ((elem_ptr = (elem_type *)((char *)(rb)->buffer +                       \
-                                  (idx % (rb)->buf_size *                      \
-                                   (rb)->buf_elem_size))) != NULL)
+    if (((elem_ptr) = (__typeof__(elem_ptr))((char *)(rb)->buffer +            \
+                                             (idx % (rb)->buf_size *           \
+                                              (rb)->buf_elem_size))) != NULL)
 
 #endif

@@ -45,10 +45,6 @@ typedef struct Job {
 
 void task_management_init(void);
 
-Task *create_task(uint32_t id, uint32_t period[], uint32_t deadline[],
-                  uint32_t wcet[], uint8_t criticality_level,
-                  uint8_t num_replicas);
-
 Job *create_job(const Task *parent_task, uint16_t global_core_id);
 void release_job(Job *job);
 void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add);

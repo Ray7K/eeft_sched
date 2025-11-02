@@ -1,0 +1,28 @@
+Checks: >
+  -*,
+  clang-analyzer-core.*,
+  clang-analyzer-deadcode.*,
+  clang-analyzer-security.*,
+  clang-analyzer-unix.*,
+  clang-analyzer-optin.performance.Padding,
+  clang-analyzer-optin.portability.UnixAPI,
+  bugprone-narrowing-conversions,
+  bugprone-signal-handler,
+  bugprone-assert-side-effect,
+  bugprone-sizeof-expression,
+  bugprone-signed-char-misuse,
+  bugprone-too-small-loop-variable,
+  bugprone-macro-parentheses,
+  bugprone-suspicious-memset-usage,
+  misc-definitions-in-headers,
+  misc-static-assert,
+  performance-inefficient-algorithm,
+CheckOptions:
+  - key: readability-magic-numbers.IgnoreAllFloatingPointValues
+    value: "true"
+  - key: readability-magic-numbers.IgnoredIntegerValues
+    value: "8;16;32;64;128;256;512;1024"
+  - key: clang-analyzer-core.CallAndMessage
+    value: "true"
+  - key: clang-analyzer-core.uninitialized.Assign
+    value: "true"

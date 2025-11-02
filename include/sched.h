@@ -15,12 +15,6 @@ typedef struct {
 
   Job *running_job;
 
-  float busy_time;
-
-  float work_done;
-
-  float sleep_time;
-
   DPMControlBlock dpm_control_block;
 
   bool is_idle;

@@ -4,6 +4,7 @@
 #include "platform.h"
 #include "sched.h"
 #include <float.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,19 +31,19 @@ uint8_t calc_required_dvfs_level(uint16_t global_core_id) {
   float remaining_wcet =
       core_state->running_job->wcet - core_state->running_job->executed_time;
 
-  float running_job_slack =
-      (core_state->running_job->actual_deadline - processor_state.system_time) -
-      remaining_wcet;
+  float running_job_slack = (float)(core_state->running_job->actual_deadline -
+                                    processor_state.system_time) -
+                            remaining_wcet;
 
   float min_slack = running_job_slack;
 
   Job *cur;
   list_for_each_entry(cur, &core_state->ready_queue, link) {
-    float slack = find_slack(global_core_id, cur->virtual_deadline, 1.0);
+    float slack = find_slack(global_core_id, cur->virtual_deadline, 1.0f);
     min_slack = (min_slack < slack) ? min_slack : slack;
   }
   list_for_each_entry(cur, &core_state->replica_queue, link) {
-    float slack = find_slack(global_core_id, cur->virtual_deadline, 1.0);
+    float slack = find_slack(global_core_id, cur->virtual_deadline, 1.0f);
     min_slack = (min_slack < slack) ? min_slack : slack;
   }
 
@@ -94,11 +95,12 @@ void power_management_set_dpm_interval(uint16_t global_core_id) {
       core_state->dpm_control_block.dpm_end_time = UINT32_MAX;
       return;
     }
-    uint64_t next_arrival_time =
+    uint32_t next_arrival_time =
         ((processor_state.system_time / next_arrival_task->period) + 1) *
         next_arrival_task->period;
 
-    const float slack = next_arrival_time - processor_state.system_time;
+    const float slack =
+        (float)(next_arrival_time - processor_state.system_time);
 
     if (slack >= DPM_IDLE_THRESHOLD_TICKS + DPM_ENTRY_LATENCY_TICKS +
                      DPM_EXIT_LATENCY_TICKS) {
@@ -106,7 +108,7 @@ void power_management_set_dpm_interval(uint16_t global_core_id) {
       core_state->dpm_control_block.dpm_start_time =
           processor_state.system_time;
       core_state->dpm_control_block.dpm_end_time =
-          processor_state.system_time + slack;
+          processor_state.system_time + (uint32_t)floor(slack);
       LOG(LOG_LEVEL_INFO,
           "Found Slack %.2f. Entering DPM for the interval %d to %d ticks...",
           slack, core_state->dpm_control_block.dpm_start_time,

@@ -47,8 +47,8 @@ static float generate_acet(Job *job) {
     criticality_level = processor_state.system_criticality_level;
   }
 
-  float acet =
-      rand_between(0.01f, 1.0f) * job->parent_task->wcet[criticality_level];
+  float acet = rand_between(0.01f, 1.0f) *
+               (float)job->parent_task->wcet[criticality_level];
 
   return acet;
 }
@@ -112,14 +112,14 @@ float find_slack(uint16_t global_core_id, uint32_t t, float scaling_factor) {
           if (future_job_deadline > t) {
             break;
           }
-          demand += ceilf(wcet / scaling_factor);
+          demand += ceilf((float)wcet / scaling_factor);
           arrival_time += period;
         }
       }
     }
   }
 
-  float interval_length = t - current_time;
+  float interval_length = (float)(t - current_time);
 
   if (demand >= interval_length) {
     return 0;
@@ -160,7 +160,7 @@ const Task *find_next_arrival_task(uint16_t global_core_id) {
 
 static bool is_admissible(uint16_t global_core_id, Job *candidate_job) {
   CoreState *core_state = &core_states[global_core_id];
-  float max_scaling_factor = 1.0;
+  float max_scaling_factor = 1.0f;
   float time_needed_for_candidate =
       ceilf((candidate_job->wcet - candidate_job->executed_time) /
             max_scaling_factor * (1 + DEMAND_PADDING_PERCENT));
@@ -171,14 +171,14 @@ static bool is_admissible(uint16_t global_core_id, Job *candidate_job) {
   Job *cur;
   list_for_each_entry(cur, &core_state->replica_queue, link) {
     uint32_t deadline = cur->virtual_deadline;
-    uint32_t slack = find_slack(global_core_id, deadline, max_scaling_factor);
+    float slack = find_slack(global_core_id, deadline, max_scaling_factor);
     if (slack < time_needed_for_candidate) {
       return false;
     }
   }
   list_for_each_entry(cur, &core_state->ready_queue, link) {
     uint32_t deadline = cur->virtual_deadline;
-    uint32_t slack = find_slack(global_core_id, deadline, max_scaling_factor);
+    float slack = find_slack(global_core_id, deadline, max_scaling_factor);
     if (slack < time_needed_for_candidate) {
       return false;
     }
@@ -218,8 +218,7 @@ static void remove_completed_jobs(uint16_t global_core_id) {
   CompletionMessage *completion_message;
   ring_buffer_t *incoming_queue =
       &processor_state.incoming_completion_msg_queue;
-  ring_buffer_iter_read_unsafe(incoming_queue, completion_message,
-                               CompletionMessage) {
+  ring_buffer_iter_read_unsafe(incoming_queue, completion_message) {
     Job *cur, *next;
     list_for_each_entry_safe(cur, next, &core_state->replica_queue, link) {
       if (cur->parent_task->id == completion_message->completed_task_id &&
@@ -288,7 +287,8 @@ static void handle_mode_change(uint16_t global_core_id,
         current_job
             ->relative_tuned_deadlines[core_state->local_criticality_level];
     current_job->wcet =
-        current_job->parent_task->wcet[core_state->local_criticality_level];
+        (float)
+            current_job->parent_task->wcet[core_state->local_criticality_level];
 
     if (current_job->parent_task->criticality_level <
         core_state->local_criticality_level) {
@@ -305,7 +305,8 @@ static void handle_mode_change(uint16_t global_core_id,
         current_job
             ->relative_tuned_deadlines[core_state->local_criticality_level];
     current_job->wcet =
-        current_job->parent_task->wcet[core_state->local_criticality_level];
+        (float)
+            current_job->parent_task->wcet[core_state->local_criticality_level];
 
     if (current_job->parent_task->criticality_level <
         core_state->local_criticality_level) {
@@ -349,7 +350,8 @@ static void handle_job_arrivals(uint16_t global_core_id) {
           processor_state.system_time +
           instance->tuned_deadlines[core_state->local_criticality_level];
       new_job->wcet =
-          new_job->parent_task->wcet[core_state->local_criticality_level];
+          (float)
+              new_job->parent_task->wcet[core_state->local_criticality_level];
 
       new_job->acet = generate_acet(new_job);
       new_job->executed_time = 0;
@@ -405,10 +407,10 @@ static void handle_running_job(uint16_t global_core_id) {
                core_state->running_job->executed_time) {
       CriticalityLevel new_criticality_level =
           core_state->local_criticality_level;
-      for (int level = new_criticality_level + 1;
+      for (uint8_t level = new_criticality_level + 1;
            level < MAX_CRITICALITY_LEVELS; level++) {
         if (core_state->running_job->executed_time <
-            core_state->running_job->parent_task->wcet[level]) {
+            (float)core_state->running_job->parent_task->wcet[level]) {
           new_criticality_level = (CriticalityLevel)level;
           break;
         }
@@ -585,7 +587,6 @@ void scheduler_tick(uint16_t global_core_id) {
       core_state->dpm_control_block.in_low_power_state = false;
       LOG(LOG_LEVEL_INFO, "Exiting low power state");
     } else {
-      core_state->sleep_time += 1;
       LOG(LOG_LEVEL_DEBUG, "Core in low power state");
       return;
     }

@@ -153,10 +153,8 @@ void ipc_receive_completion_messages(void) {
               atomic_load(&processor_state.system_criticality_level) &&
           msg.new_level < MAX_CRITICALITY_LEVELS) {
         LOG(LOG_LEVEL_WARN,
-            "Received criticality change to level %d from "
-            "%s:%d",
-            msg.new_level, inet_ntoa(sender_addr.sin_addr),
-            ntohs(sender_addr.sin_port));
+            "Received criticality change to level %d from %s:%d", msg.new_level,
+            inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port));
         atomic_store(&processor_state.system_criticality_level, msg.new_level);
       }
     } else if (pkt_type == PACKET_TYPE_COMPLETION) {

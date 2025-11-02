@@ -24,10 +24,10 @@ struct TestCase {
                       teardown_func_ptr)                                       \
   static TestCase __test_case##test_func_ptr __attribute__((                   \
       used, section("__DATA,test_cases"), no_sanitize("address"))) = {         \
-      .name = test_name_str,                                                   \
-      .func = test_func_ptr,                                                   \
-      .setup = setup_func_ptr,                                                 \
-      .teardown = teardown_func_ptr,                                           \
+      .name = (test_name_str),                                                 \
+      .func = (test_func_ptr),                                                 \
+      .setup = (setup_func_ptr),                                               \
+      .teardown = (teardown_func_ptr),                                         \
       .assertions_executed = 0,                                                \
       .expects_executed = 0,                                                   \
       .expects_failed = 0,                                                     \
