@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-ring_buffer_t log_queue;
+ring_buffer log_queue;
 
 static FILE *log_file = NULL;
 static pthread_t logger_thread;

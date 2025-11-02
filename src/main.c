@@ -12,7 +12,7 @@
 
 LogLevel current_log_level = LOG_LEVEL_DEBUG;
 
-barrier_t *proc_barrier = NULL;
+barrier *proc_barrier = NULL;
 
 static void sigint_handler(int signum) { (void)signum; }
 
@@ -26,14 +26,14 @@ int main(int argc, char *argv[]) {
 
   int shmid;
 
-  shmid = shmget(IPC_PRIVATE, sizeof(barrier_t), IPC_CREAT | 0666);
+  shmid = shmget(IPC_PRIVATE, sizeof(barrier), IPC_CREAT | 0666);
   if (shmid < 0) {
     perror("shmget failed");
     return 1;
   }
 
-  proc_barrier = (barrier_t *)shmat(shmid, NULL, 0);
-  if (proc_barrier == (barrier_t *)-1) {
+  proc_barrier = (barrier *)shmat(shmid, NULL, 0);
+  if (proc_barrier == (barrier *)-1) {
     perror("shmat failed");
     return 1;
   }

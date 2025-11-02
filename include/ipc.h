@@ -10,17 +10,17 @@
 typedef enum {
   PACKET_TYPE_COMPLETION = 0x01,
   PACKET_TYPE_CRITICALITY_CHANGE = 0x02,
-} PacketType;
+} packet_type;
 
 typedef struct {
   uint32_t completed_task_id;
   uint32_t job_arrival_time;
   uint32_t system_time;
-} CompletionMessage;
+} completion_message;
 
 typedef struct {
   CriticalityLevel new_level;
-} CriticalityChangeMessage;
+} criticality_change_message;
 
 void ipc_thread_init(void);
 void ipc_broadcast_criticality_change(CriticalityLevel new_level);

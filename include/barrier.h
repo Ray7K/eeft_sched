@@ -12,10 +12,10 @@ typedef struct {
   unsigned cycle;
   pthread_mutex_t mut;
   pthread_cond_t cond;
-} barrier_t;
+} barrier;
 
-int barrier_init(barrier_t *barrier, unsigned n, int pshared);
-int barrier_destroy(barrier_t *barrier);
-int barrier_wait(barrier_t *barrier);
+int barrier_init(barrier *barrier, unsigned n, int pshared);
+int barrier_destroy(barrier *barrier);
+int barrier_wait(barrier *barrier);
 
 #endif

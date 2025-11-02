@@ -20,15 +20,15 @@ typedef struct {
   struct list_head discard_queue;
   pthread_mutex_t discard_queue_lock;
 
-  ring_buffer_t incoming_completion_msg_queue;
-  ring_buffer_t outgoing_completion_msg_queue;
+  ring_buffer incoming_completion_msg_queue;
+  ring_buffer outgoing_completion_msg_queue;
 
   uint8_t processor_id;
-  barrier_t core_completion_barrier;
-  barrier_t time_sync_barrier;
+  barrier core_completion_barrier;
+  barrier time_sync_barrier;
 } ProcessorState;
 
-extern barrier_t *proc_barrier;
+extern barrier *proc_barrier;
 
 extern ProcessorState processor_state;
 

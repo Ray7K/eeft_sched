@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-extern ring_buffer_t log_queue;
+extern ring_buffer log_queue;
 
 typedef enum {
   LOG_LEVEL_DEBUG,

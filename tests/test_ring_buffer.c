@@ -12,7 +12,7 @@
 
 // Context for each test, holding the ring buffer and its allocated memory
 typedef struct {
-  ring_buffer_t rb;
+  ring_buffer rb;
   void *buffer;
   _Atomic uint64_t *seq_array;
 } test_rb_context_t;
@@ -124,8 +124,8 @@ static void test_rb_wrap_around(TestCase *test) {
 
 // Shared data for MPMC test
 typedef struct {
-  ring_buffer_t *rb;
-  barrier_t *barrier;
+  ring_buffer *rb;
+  barrier *barrier;
   _Atomic int64_t *items_to_consume;
   // Results need a mutex because multiple consumers write to it
   pthread_mutex_t *results_lock;
@@ -175,7 +175,7 @@ static void test_rb_mpmc_stress(TestCase *test) {
   pthread_t producers[STRESS_NUM_PRODUCERS];
   pthread_t consumers[STRESS_NUM_CONSUMERS];
   mpmc_thread_data_t thread_data[STRESS_NUM_PRODUCERS + STRESS_NUM_CONSUMERS];
-  barrier_t barrier;
+  barrier barrier;
 
   // Shared results data
   uint64_t producer_counts[STRESS_NUM_PRODUCERS] = {0};

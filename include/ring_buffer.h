@@ -15,9 +15,9 @@ typedef struct {
   uint64_t buf_size;
   uint64_t buf_elem_size;
   void *buffer;
-} ring_buffer_t;
+} ring_buffer;
 
-static inline void ring_buffer_init(ring_buffer_t *rb, uint64_t size,
+static inline void ring_buffer_init(ring_buffer *rb, uint64_t size,
                                     void *buffer, _Atomic uint64_t *seq,
                                     uint64_t elem_size) {
   rb->buf_size = size;
@@ -33,7 +33,7 @@ static inline void ring_buffer_init(ring_buffer_t *rb, uint64_t size,
   atomic_store(&rb->tail, 0);
 }
 
-static inline int ring_buffer_try_enqueue(ring_buffer_t *rb, void *elem) {
+static inline int ring_buffer_try_enqueue(ring_buffer *rb, void *elem) {
   uint64_t tail = atomic_load(&rb->tail);
 
   if (atomic_load_explicit(&rb->seq[tail % rb->buf_size],
@@ -52,7 +52,7 @@ static inline int ring_buffer_try_enqueue(ring_buffer_t *rb, void *elem) {
   return 0;
 }
 
-static inline int ring_buffer_enqueue(ring_buffer_t *rb, void *elem) {
+static inline int ring_buffer_enqueue(ring_buffer *rb, void *elem) {
   uint64_t tail = atomic_fetch_add(&rb->tail, 1);
 
   while (atomic_load_explicit(&rb->seq[tail % rb->buf_size],
@@ -67,7 +67,7 @@ static inline int ring_buffer_enqueue(ring_buffer_t *rb, void *elem) {
   return 0;
 }
 
-static inline int ring_buffer_try_dequeue(ring_buffer_t *rb, void *elem) {
+static inline int ring_buffer_try_dequeue(ring_buffer *rb, void *elem) {
   // printf("Trying Dequeue\n");
   uint64_t head = atomic_load(&rb->head);
 
@@ -87,7 +87,7 @@ static inline int ring_buffer_try_dequeue(ring_buffer_t *rb, void *elem) {
   return 0;
 }
 
-static inline int ring_buffer_dequeue(ring_buffer_t *rb, void *elem) {
+static inline int ring_buffer_dequeue(ring_buffer *rb, void *elem) {
   uint64_t head = atomic_fetch_add(&rb->head, 1);
 
   while (atomic_load_explicit(&rb->seq[head % rb->buf_size],
@@ -102,7 +102,7 @@ static inline int ring_buffer_dequeue(ring_buffer_t *rb, void *elem) {
   return 0;
 }
 
-static inline void ring_buffer_clear(ring_buffer_t *rb) {
+static inline void ring_buffer_clear(ring_buffer *rb) {
   uint64_t head = atomic_load_explicit(&rb->head, memory_order_relaxed);
   uint64_t tail = atomic_load_explicit(&rb->tail, memory_order_relaxed);
 

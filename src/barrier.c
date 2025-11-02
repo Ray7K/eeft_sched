@@ -1,6 +1,6 @@
 #include "barrier.h"
 
-int barrier_init(barrier_t *barrier, unsigned n, int pshared) {
+int barrier_init(barrier *barrier, unsigned n, int pshared) {
   if (n == 0) {
     return EINVAL;
   }
@@ -42,7 +42,7 @@ fail:
   return EPERM;
 }
 
-int barrier_destroy(barrier_t *barrier) {
+int barrier_destroy(barrier *barrier) {
   pthread_mutex_lock(&barrier->mut);
   if (barrier->count != 0) {
     pthread_mutex_unlock(&barrier->mut);
@@ -56,7 +56,7 @@ int barrier_destroy(barrier_t *barrier) {
   return 0;
 }
 
-int barrier_wait(barrier_t *barrier) {
+int barrier_wait(barrier *barrier) {
   pthread_mutex_lock(&barrier->mut);
 
   unsigned cur_cycle = barrier->cycle;

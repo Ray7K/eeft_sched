@@ -11,7 +11,7 @@
 
 ProcessorState processor_state;
 
-barrier_t *proc_barrier __attribute__((weak)) = NULL;
+barrier *proc_barrier __attribute__((weak)) = NULL;
 
 static volatile sig_atomic_t shutdown_requested = 0;
 

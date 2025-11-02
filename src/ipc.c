@@ -21,9 +21,9 @@
 static int sockfd = -1;
 static struct sockaddr_in mcast_addr;
 
-static CompletionMessage g_incoming_buf[MESSAGE_QUEUE_SIZE];
+static completion_message g_incoming_buf[MESSAGE_QUEUE_SIZE];
 static _Atomic uint64_t g_incoming_seq[MESSAGE_QUEUE_SIZE];
-static CompletionMessage g_outgoing_buf[MESSAGE_QUEUE_SIZE];
+static completion_message g_outgoing_buf[MESSAGE_QUEUE_SIZE];
 static _Atomic uint64_t g_outgoing_seq[MESSAGE_QUEUE_SIZE];
 
 void ipc_thread_init(void) {
@@ -111,10 +111,10 @@ void ipc_thread_init(void) {
 
   ring_buffer_init(&processor_state.incoming_completion_msg_queue,
                    MESSAGE_QUEUE_SIZE, g_incoming_buf, g_incoming_seq,
-                   sizeof(CompletionMessage));
+                   sizeof(completion_message));
   ring_buffer_init(&processor_state.outgoing_completion_msg_queue,
                    MESSAGE_QUEUE_SIZE, g_outgoing_buf, g_outgoing_seq,
-                   sizeof(CompletionMessage));
+                   sizeof(completion_message));
 
   LOG(LOG_LEVEL_INFO,
       "IPC thread initialized. Multicasting to %s:%d (loopback-only)",
@@ -123,7 +123,7 @@ void ipc_thread_init(void) {
 
 void ipc_receive_completion_messages(void) {
   LOG(LOG_LEVEL_DEBUG, "Checking for incoming completion messages...");
-  char packet_buf[1 + (MESSAGE_QUEUE_SIZE * sizeof(CompletionMessage))];
+  char packet_buf[1 + (MESSAGE_QUEUE_SIZE * sizeof(completion_message))];
   ssize_t len;
   struct sockaddr_in sender_addr;
   socklen_t sender_len = sizeof(sender_addr);
@@ -140,14 +140,14 @@ void ipc_receive_completion_messages(void) {
       break;
     }
 
-    PacketType pkt_type = (PacketType)packet_buf[0];
+    packet_type pkt_type = (packet_type)packet_buf[0];
     char *payload = packet_buf + 1;
     size_t payload_len = (size_t)len - 1;
 
     if (pkt_type == PACKET_TYPE_CRITICALITY_CHANGE &&
-        payload_len == sizeof(CriticalityChangeMessage)) {
-      CriticalityChangeMessage msg;
-      memcpy(&msg, payload, sizeof(CriticalityChangeMessage));
+        payload_len == sizeof(criticality_change_message)) {
+      criticality_change_message msg;
+      memcpy(&msg, payload, sizeof(criticality_change_message));
 
       if (msg.new_level >
               atomic_load(&processor_state.system_criticality_level) &&
@@ -158,12 +158,12 @@ void ipc_receive_completion_messages(void) {
         atomic_store(&processor_state.system_criticality_level, msg.new_level);
       }
     } else if (pkt_type == PACKET_TYPE_COMPLETION) {
-      size_t num_msgs = payload_len / sizeof(CompletionMessage);
+      size_t num_msgs = payload_len / sizeof(completion_message);
 
       for (size_t i = 0; i < num_msgs; i++) {
-        CompletionMessage msg;
-        memcpy(&msg, payload + (i * sizeof(CompletionMessage)),
-               sizeof(CompletionMessage));
+        completion_message msg;
+        memcpy(&msg, payload + (i * sizeof(completion_message)),
+               sizeof(completion_message));
 
         LOG(LOG_LEVEL_DEBUG,
             "Received completion message for task ID %d from %s:%d",
@@ -183,29 +183,29 @@ void ipc_receive_completion_messages(void) {
 
 void ipc_broadcast_criticality_change(CriticalityLevel new_level) {
   LOG(LOG_LEVEL_WARN, "Broadcasting criticality change to level %d", new_level);
-  char packet[1 + sizeof(CriticalityChangeMessage)];
+  char packet[1 + sizeof(criticality_change_message)];
   packet[0] = PACKET_TYPE_CRITICALITY_CHANGE;
-  CriticalityChangeMessage msg = {
+  criticality_change_message msg = {
       .new_level = new_level,
   };
-  memcpy(packet + 1, &msg, sizeof(CriticalityChangeMessage));
+  memcpy(packet + 1, &msg, sizeof(criticality_change_message));
   sendto(sockfd, packet, sizeof(packet), 0, (struct sockaddr *)&mcast_addr,
          sizeof(mcast_addr));
 }
 
 void ipc_send_completion_messages(void) {
-  char packet_buf[1 + (MESSAGE_QUEUE_SIZE * sizeof(CompletionMessage))];
+  char packet_buf[1 + (MESSAGE_QUEUE_SIZE * sizeof(completion_message))];
 
   size_t num_msgs = 0;
 
   packet_buf[0] = PACKET_TYPE_COMPLETION;
 
   while (num_msgs < MESSAGE_QUEUE_SIZE) {
-    CompletionMessage msg;
+    completion_message msg;
     if (ring_buffer_try_dequeue(&processor_state.outgoing_completion_msg_queue,
                                 &msg) == 0) {
-      memcpy(packet_buf + 1 + (num_msgs * sizeof(CompletionMessage)), &msg,
-             sizeof(CompletionMessage));
+      memcpy(packet_buf + 1 + (num_msgs * sizeof(completion_message)), &msg,
+             sizeof(completion_message));
       LOG(LOG_LEVEL_DEBUG,
           "Queued completion message for task ID %d for sending",
           msg.completed_task_id);
@@ -216,7 +216,7 @@ void ipc_send_completion_messages(void) {
   }
 
   if (num_msgs > 0) {
-    size_t len = 1 + (num_msgs * sizeof(CompletionMessage));
+    size_t len = 1 + (num_msgs * sizeof(completion_message));
 
     ssize_t sent_len =
         sendto(sockfd, packet_buf, len, 0, (struct sockaddr *)&mcast_addr,
