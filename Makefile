@@ -61,15 +61,15 @@ define log_fail
 endef
 
 define MSG_CC
-	@printf "$(COLOR_INFO)[CC]$(COLOR_RESET)      $(COLOR_DIM)%s$(COLOR_RESET) -> $(COLOR_OK)%s$(COLOR_RESET)\n" "$1" "$2"
+	@printf "$(COLOR_INFO)[CC]$(COLOR_RESET) $(COLOR_DIM)%s$(COLOR_RESET) -> $(COLOR_OK)%s$(COLOR_RESET)\n" "$1" "$2"
 endef
 
 define MSG_CC_TEST
-	@printf "$(COLOR_INFO)[CC-TEST]$(COLOR_RESET)  $(COLOR_DIM)%s$(COLOR_RESET) -> $(COLOR_OK)%s$(COLOR_RESET)\n" "$1" "$2"
+	@printf "$(COLOR_INFO)[CC-TEST]$(COLOR_RESET) $(COLOR_DIM)%s$(COLOR_RESET) -> $(COLOR_OK)%s$(COLOR_RESET)\n" "$1" "$2"
 endef
 
 define MSG_LD
-	@printf "$(COLOR_INFO)[LD]$(COLOR_RESET)       $(COLOR_OK)%s$(COLOR_RESET)\n" "$1"
+	@printf "$(COLOR_INFO)[LD]$(COLOR_RESET) $(COLOR_OK)%s$(COLOR_RESET)\n" "$1"
 endef
 
 define MSG_SUB
