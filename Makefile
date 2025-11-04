@@ -14,6 +14,33 @@ ifeq ($(STRICT),1)
 CFLAGS += -Werror -pedantic -Wconversion
 endif
 
+ASAN ?= 0
+TSAN ?= 0
+UBSAN ?= 0
+
+# Default sanitizer mode
+ifeq ($(ASAN)$(TSAN)$(UBSAN),000)
+    UBSAN := 1
+endif
+
+SANITIZER_FLAGS :=
+SANITIZER_SUFFIX := default
+
+ifeq ($(ASAN),1)
+    SANITIZER_FLAGS += -fsanitize=address
+    SANITIZER_SUFFIX := asan
+endif
+ifeq ($(TSAN),1)
+    SANITIZER_FLAGS += -fsanitize=thread
+    SANITIZER_SUFFIX := tsan
+endif
+ifeq ($(UBSAN),1)
+    SANITIZER_FLAGS += -fsanitize=undefined
+    ifeq ($(SANITIZER_SUFFIX),default)
+        SANITIZER_SUFFIX := ubsan
+    endif
+endif
+
 V ?= 0
 ifeq ($(V), 0)
     Q = @
@@ -25,7 +52,7 @@ SRC_DIR = src
 TEST_DIR = tests
 TARGET_DIR = target
 
-DEBUG_DIR = $(TARGET_DIR)/debug
+DEBUG_DIR = $(TARGET_DIR)/debug-$(SANITIZER_SUFFIX)
 RELEASE_DIR = $(TARGET_DIR)/release
 PROFILE_DIR = $(TARGET_DIR)/profile
 
@@ -135,13 +162,13 @@ test-profile: $(PROFILE_BIN_DIR)/$(PACKAGE_NAME)-tests
 
 clean:
 	$(call log_info, Cleaning $(TARGET_DIR)...)
-	$Qrm -rf $(RELEASE_DIR) $(DEBUG_DIR) $(PROFILE_DIR)
+	$Qrm -rf $(TARGET_DIR)/debug-* $(TARGET_DIR)/release $(TARGET_DIR)/profile
 	$(call log_ok, Clean complete.)
 
 
 $(DEBUG_BIN_DIR)/$(PACKAGE_NAME): $(DEBUG_OBJECTS) | $(DEBUG_BIN_DIR)
 	$(call MSG_LD, $@)
-	$Q$(CC) $(CFLAGS) -g -fsanitize=address,undefined $^ -o $@
+	$Q$(CC) $(CFLAGS) -g $(SANITIZER_FLAGS) $^ -o $@
 	$(call MSG_SUB, dSYM)
 	$Qdsymutil $@
 	$(call log_ok, Built debug: $@)
@@ -163,7 +190,7 @@ $(PROFILE_BIN_DIR)/$(PACKAGE_NAME): $(PROFILE_OBJECTS) | $(PROFILE_BIN_DIR)
 
 $(DEBUG_BIN_DIR)/$(PACKAGE_NAME)-tests: $(DEBUG_OTHER_OBJS) $(DEBUG_TEST_OBJECTS) | $(DEBUG_BIN_DIR)
 	$(call MSG_LD, $@)
-	$Q$(CC) $(CFLAGS) -g -fsanitize=address,undefined $^ -o $@
+	$Q$(CC) $(CFLAGS) -g $(SANITIZER_FLAGS) $^ -o $@
 	$(call log_ok, Built debug tests: $@)
 
 $(RELEASE_BIN_DIR)/$(PACKAGE_NAME)-tests: $(RELEASE_OTHER_OBJS) $(RELEASE_TEST_OBJECTS) | $(RELEASE_BIN_DIR)
@@ -183,7 +210,7 @@ $(PROFILE_BIN_DIR)/$(PACKAGE_NAME)-tests: $(PROFILE_OTHER_OBJS) $(PROFILE_TEST_O
 
 $(DEBUG_OBJECTS_DIR)/%.o: $(SRC_DIR)/%.c | $(DEBUG_OBJECTS_DIR)
 	$(call MSG_CC, $<, $@)
-	$Q$(CC) $(CFLAGS) -g -fsanitize=address,undefined -c $< -o $@
+	$Q$(CC) $(CFLAGS) -g $(SANITIZER_FLAGS) -c $< -o $@
 
 $(RELEASE_OBJECTS_DIR)/%.o: $(SRC_DIR)/%.c | $(RELEASE_OBJECTS_DIR)
 	$(call MSG_CC, $<, $@)
@@ -196,7 +223,7 @@ $(PROFILE_OBJECTS_DIR)/%.o: $(SRC_DIR)/%.c | $(PROFILE_OBJECTS_DIR)
 
 $(DEBUG_OBJECTS_DIR)/tests/%.o: $(TEST_DIR)/%.c | $(DEBUG_OBJECTS_DIR)/tests
 	$(call MSG_CC_TEST, $<, $@)
-	$Q$(CC) $(CFLAGS) -g -fsanitize=address,undefined -c $< -o $@
+	$Q$(CC) $(CFLAGS) -g $(SANITIZER_FLAGS) -c $< -o $@
 
 $(RELEASE_OBJECTS_DIR)/tests/%.o: $(TEST_DIR)/%.c | $(RELEASE_OBJECTS_DIR)/tests
 	$(call MSG_CC_TEST, $<, $@)
