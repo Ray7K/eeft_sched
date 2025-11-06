@@ -1,8 +1,8 @@
-#include "platform.h"
+#include "processor.h"
 #include "ipc.h"
-#include "list.h"
-#include "log.h"
-#include "sched.h"
+#include "lib/list.h"
+#include "lib/log.h"
+#include "scheduler/sched_core.h"
 #include "sys_config.h"
 #include <signal.h>
 #include <stdatomic.h>
@@ -16,7 +16,11 @@ barrier *proc_barrier __attribute__((weak)) = NULL;
 
 static volatile sig_atomic_t shutdown_requested = 0;
 
-#define SYSTEM_TICK_MS 10
+#define SYSTEM_TICK_MS 5
+
+#ifndef TOTAL_TICKS
+#define TOTAL_TICKS 0
+#endif
 
 __thread LogThreadContext log_thread_context = {0, 0, false};
 
@@ -36,12 +40,17 @@ static void *timer_thread_func(void *arg) {
         LOG(LOG_LEVEL_INFO, "Releasing job with parent task ID %d",
             cur->parent_task->id);
         list_del(&cur->link);
-        release_job(cur, NUM_CORES_PER_PROC);
+        put_job_ref(cur, NUM_CORES_PER_PROC);
       }
     }
     pthread_mutex_unlock(&processor_state.discard_queue_lock);
 
-    __sync_fetch_and_add(&processor_state.system_time, 1);
+    atomic_fetch_add_explicit(&processor_state.system_time, 1,
+                              memory_order_relaxed);
+
+    if (TOTAL_TICKS > 0 && processor_state.system_time >= TOTAL_TICKS) {
+      shutdown_requested = 1;
+    }
 
     usleep(SYSTEM_TICK_MS * 1000);
 
@@ -57,22 +66,21 @@ static void *timer_thread_func(void *arg) {
 }
 
 static void *core_thread_func(void *arg) {
-  uint8_t global_core_id = *((uint8_t *)arg);
-
+  uint8_t core_id = *((uint8_t *)arg);
   log_thread_context.proc_id = processor_state.processor_id;
-  log_thread_context.core_id = global_core_id % NUM_CORES_PER_PROC;
+  log_thread_context.core_id = core_id;
   log_thread_context.is_set = true;
 
   while (!shutdown_requested) {
-    scheduler_tick(global_core_id);
+    scheduler_tick(core_id);
     barrier_wait(&processor_state.core_completion_barrier);
     barrier_wait(&processor_state.time_sync_barrier);
   }
   return NULL;
 }
 
-void platform_cleanup(void) {
-  LOG(LOG_LEVEL_INFO, "Cleaning up platform...");
+void processor_cleanup(void) {
+  LOG(LOG_LEVEL_INFO, "Cleaning up processor...");
   log_system_shutdown();
   pthread_mutex_destroy(&processor_state.discard_queue_lock);
   barrier_destroy(&processor_state.core_completion_barrier);
@@ -80,13 +88,14 @@ void platform_cleanup(void) {
   ipc_cleanup();
 }
 
-static void platform_sigint_handler(int sig) {
+static void processor_sigint_handler(int sig) {
   (void)sig;
   shutdown_requested = 1;
 }
 
-void platform_init(uint8_t proc_id) {
-  signal(SIGINT, platform_sigint_handler);
+void processor_init(uint8_t proc_id) {
+  signal(SIGTERM, processor_sigint_handler);
+  signal(SIGINT, processor_sigint_handler);
 
   log_system_init(proc_id);
 
@@ -103,16 +112,22 @@ void platform_init(uint8_t proc_id) {
                0);
   barrier_init(&processor_state.time_sync_barrier, NUM_CORES_PER_PROC + 1, 0);
 
+  INIT_LIST_HEAD(&processor_state.ready_job_offer_queue);
+  pthread_mutex_init(&processor_state.ready_job_offer_queue_lock, NULL);
+
+  INIT_LIST_HEAD(&processor_state.future_job_offer_queue);
+  pthread_mutex_init(&processor_state.future_job_offer_queue_lock, NULL);
+
   ipc_thread_init();
   scheduler_init();
 
   LOG(LOG_LEVEL_INFO, "Processor %d Initialization Complete.", proc_id);
 }
 
-void platform_run(void) {
+void processor_run(void) {
   pthread_t timer_thread;
   pthread_t core_threads[NUM_CORES_PER_PROC];
-  uint8_t local_core_ids[NUM_CORES_PER_PROC];
+  uint8_t core_ids[NUM_CORES_PER_PROC];
 
   LOG(LOG_LEVEL_INFO, "Launching threads...");
 
@@ -122,11 +137,9 @@ void platform_run(void) {
   }
 
   for (uint8_t i = 0; i < NUM_CORES_PER_PROC; ++i) {
-    uint8_t local_core_id =
-        i + processor_state.processor_id * NUM_CORES_PER_PROC;
-    local_core_ids[i] = local_core_id;
+    core_ids[i] = i;
     if (pthread_create(&core_threads[i], NULL, core_thread_func,
-                       &local_core_ids[i])) {
+                       &core_ids[i])) {
       perror("pthread_create core");
       return;
     }
@@ -138,5 +151,5 @@ void platform_run(void) {
     pthread_join(core_threads[i], NULL);
   }
   pthread_join(timer_thread, NULL);
-  platform_cleanup();
+  processor_cleanup();
 }

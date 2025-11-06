@@ -1,4 +1,4 @@
-#include "tests.h"
+#include "tests/tests.h"
 #include <mach-o/getsect.h>
 #include <mach-o/ldsyms.h>
 #include <stdbool.h>
@@ -21,7 +21,7 @@ unsigned int tests_failed = 0;
 static double get_time_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (ts.tv_sec * 1000.0) + (ts.tv_nsec / 1e6);
+  return ((double)ts.tv_sec * 1000.0) + ((double)ts.tv_nsec / 1e6);
 }
 
 static void run_tests(const char *filter) {

@@ -9,6 +9,11 @@ CFLAGS = -Wall -Wextra -std=c11 -Iinclude -pthread -MMD -MP
 CFLAGS += -Wvla -Wfloat-equal -Wshadow -Wpointer-arith -Wno-cast-align \
           -Wstrict-prototypes -Wmissing-prototypes -Wreturn-type
 
+LDFLAGS = -pthread
+
+TICKS ?= 1000
+CFLAGS += -DTOTAL_TICKS=$(TICKS)
+
 STRICT ?= 0
 ifeq ($(STRICT),1)
 CFLAGS += -Werror -pedantic -Wconversion
@@ -41,12 +46,18 @@ ifeq ($(UBSAN),1)
     endif
 endif
 
+DEBUG_FLAGS   = -g $(SANITIZER_FLAGS)
+RELEASE_FLAGS = -O3 -flto
+PROFILE_FLAGS = -O3 -g -flto
+
+
 V ?= 0
 ifeq ($(V), 0)
     Q = @
 else
     Q =
 endif
+
 
 SRC_DIR = src
 TEST_DIR = tests
@@ -104,7 +115,7 @@ define MSG_SUB
 endef
 
 
-SRC_FILES = $(wildcard $(SRC_DIR)/*.c)
+SRC_FILES := $(shell find $(SRC_DIR) -type f -name '*.c')
 TEST_FILES = $(wildcard $(TEST_DIR)/*.c)
 
 
@@ -168,21 +179,21 @@ clean:
 
 $(DEBUG_BIN_DIR)/$(PACKAGE_NAME): $(DEBUG_OBJECTS) | $(DEBUG_BIN_DIR)
 	$(call MSG_LD, $@)
-	$Q$(CC) $(CFLAGS) -g $(SANITIZER_FLAGS) $^ -o $@
+	$Q$(CC) $(CFLAGS) $(DEBUG_FLAGS) $(LDFLAGS) $^ -o $@
 	$(call MSG_SUB, dSYM)
 	$Qdsymutil $@
 	$(call log_ok, Built debug: $@)
 
 $(RELEASE_BIN_DIR)/$(PACKAGE_NAME): $(RELEASE_OBJECTS) | $(RELEASE_BIN_DIR)
 	$(call MSG_LD, $@)
-	$Q$(CC) $(CFLAGS) -O3 $^ -o $@
+	$Q$(CC) $(CFLAGS) $(RELEASE_FLAGS) $(LDFLAGS) $^ -o $@
 	$(call MSG_SUB, strip)
 	$Qstrip $@
 	$(call log_ok, Built release: $@)
 
 $(PROFILE_BIN_DIR)/$(PACKAGE_NAME): $(PROFILE_OBJECTS) | $(PROFILE_BIN_DIR)
 	$(call MSG_LD, $@)
-	$Q$(CC) $(CFLAGS) -O3 -g $^ -o $@
+	$Q$(CC) $(CFLAGS) $(PROFILE_FLAGS) $(LDFLAGS) $^ -o $@
 	$(call MSG_SUB, dSYM)
 	$Qdsymutil $@
 	$(call log_ok, Built profile: $@)
@@ -190,19 +201,19 @@ $(PROFILE_BIN_DIR)/$(PACKAGE_NAME): $(PROFILE_OBJECTS) | $(PROFILE_BIN_DIR)
 
 $(DEBUG_BIN_DIR)/$(PACKAGE_NAME)-tests: $(DEBUG_OTHER_OBJS) $(DEBUG_TEST_OBJECTS) | $(DEBUG_BIN_DIR)
 	$(call MSG_LD, $@)
-	$Q$(CC) $(CFLAGS) -g $(SANITIZER_FLAGS) $^ -o $@
+	$Q$(CC) $(CFLAGS) $(DEBUG_FLAGS) $(LDFLAGS) $^ -o $@
 	$(call log_ok, Built debug tests: $@)
 
 $(RELEASE_BIN_DIR)/$(PACKAGE_NAME)-tests: $(RELEASE_OTHER_OBJS) $(RELEASE_TEST_OBJECTS) | $(RELEASE_BIN_DIR)
 	$(call MSG_LD, $@)
-	$Q$(CC) $(CFLAGS) -O3 $^ -o $@
+	$Q$(CC) $(CFLAGS) $(RELEASE_FLAGS) $(LDFLAGS) $^ -o $@
 	$(call MSG_SUB, strip)
 	$Qstrip $@
 	$(call log_ok, Built release tests: $@)
 
 $(PROFILE_BIN_DIR)/$(PACKAGE_NAME)-tests: $(PROFILE_OTHER_OBJS) $(PROFILE_TEST_OBJECTS) | $(PROFILE_BIN_DIR)
 	$(call MSG_LD, $@)
-	$Q$(CC) $(CFLAGS) -O3 -g $^ -o $@
+	$Q$(CC) $(CFLAGS) $(PROFILE_FLAGS) $(LDFLAGS) $^ -o $@
 	$(call MSG_SUB, dSYM)
 	$Qdsymutil $@
 	$(call log_ok, Built profile tests: $@)
@@ -210,28 +221,34 @@ $(PROFILE_BIN_DIR)/$(PACKAGE_NAME)-tests: $(PROFILE_OTHER_OBJS) $(PROFILE_TEST_O
 
 $(DEBUG_OBJECTS_DIR)/%.o: $(SRC_DIR)/%.c | $(DEBUG_OBJECTS_DIR)
 	$(call MSG_CC, $<, $@)
-	$Q$(CC) $(CFLAGS) -g $(SANITIZER_FLAGS) -c $< -o $@
+	$Qmkdir -p $(dir $@)
+	$Q$(CC) $(CFLAGS) $(DEBUG_FLAGS) -c $< -o $@
 
 $(RELEASE_OBJECTS_DIR)/%.o: $(SRC_DIR)/%.c | $(RELEASE_OBJECTS_DIR)
 	$(call MSG_CC, $<, $@)
-	$Q$(CC) $(CFLAGS) -O3 -c $< -o $@
+	$Qmkdir -p $(dir $@)
+	$Q$(CC) $(CFLAGS) $(RELEASE_FLAGS) -c $< -o $@
 
 $(PROFILE_OBJECTS_DIR)/%.o: $(SRC_DIR)/%.c | $(PROFILE_OBJECTS_DIR)
 	$(call MSG_CC, $<, $@)
-	$Q$(CC) $(CFLAGS) -O3 -g -c $< -o $@
+	$Qmkdir -p $(dir $@)
+	$Q$(CC) $(CFLAGS) $(PROFILE_FLAGS) -c $< -o $@
 
 
 $(DEBUG_OBJECTS_DIR)/tests/%.o: $(TEST_DIR)/%.c | $(DEBUG_OBJECTS_DIR)/tests
 	$(call MSG_CC_TEST, $<, $@)
-	$Q$(CC) $(CFLAGS) -g $(SANITIZER_FLAGS) -c $< -o $@
+	$Qmkdir -p $(dir $@)
+	$Q$(CC) $(CFLAGS) $(DEBUG_FLAGS) -c $< -o $@
 
 $(RELEASE_OBJECTS_DIR)/tests/%.o: $(TEST_DIR)/%.c | $(RELEASE_OBJECTS_DIR)/tests
 	$(call MSG_CC_TEST, $<, $@)
-	$Q$(CC) $(CFLAGS) -O3 -c $< -o $@
+	$Qmkdir -p $(dir $@)
+	$Q$(CC) $(CFLAGS) $(RELEASE_FLAGS) -c $< -o $@
 
 $(PROFILE_OBJECTS_DIR)/tests/%.o: $(TEST_DIR)/%.c | $(PROFILE_OBJECTS_DIR)/tests
 	$(call MSG_CC_TEST, $<, $@)
-	$Q$(CC) $(CFLAGS) -O3 -g -c $< -o $@
+	$Qmkdir -p $(dir $@)
+	$Q$(CC) $(CFLAGS) $(PROFILE_FLAGS) -c $< -o $@
 
 
 $(DEBUG_OBJECTS_DIR) $(RELEASE_OBJECTS_DIR) $(PROFILE_OBJECTS_DIR):
@@ -244,12 +261,13 @@ $(DEBUG_BIN_DIR) $(RELEASE_BIN_DIR) $(PROFILE_BIN_DIR):
 	$Q@mkdir -p $@
 
 
--include $(DEBUG_OBJECTS_DIR)/*.d
--include $(RELEASE_OBJECTS_DIR)/*.d
--include $(PROFILE_OBJECTS_DIR)/*.d
--include $(DEBUG_OBJECTS_DIR)/tests/*.d
--include $(RELEASE_OBJECTS_DIR)/tests/*.d
--include $(PROFILE_OBJECTS_DIR)/tests/*.d
+DEBUG_DEPS := $(shell find $(DEBUG_OBJECTS_DIR) -name '*.d' 2>/dev/null)
+RELEASE_DEPS := $(shell find $(RELEASE_OBJECTS_DIR) -name '*.d' 2>/dev/null)
+PROFILE_DEPS := $(shell find $(PROFILE_OBJECTS_DIR) -name '*.d' 2>/dev/null)
+
+-include $(DEBUG_DEPS)
+-include $(RELEASE_DEPS)
+-include $(PROFILE_DEPS)
 
 
 show-flags:

@@ -1,7 +1,7 @@
 #ifndef LOG_H
 #define LOG_H
 
-#include "platform.h"
+#include "processor.h"
 #include "ring_buffer.h"
 #include <dispatch/dispatch.h>
 #include <semaphore.h>

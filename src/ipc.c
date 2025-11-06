@@ -12,8 +12,8 @@
 
 #include <stdatomic.h>
 
-#include "log.h"
-#include "platform.h"
+#include "lib/log.h"
+#include "processor.h"
 
 #define MCAST_GROUP "239.0.0.1"
 #define MCAST_PORT 12345

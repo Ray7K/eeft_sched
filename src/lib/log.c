@@ -1,6 +1,6 @@
-#include "log.h"
-#include "platform.h"
-#include "ring_buffer.h"
+#include "lib/log.h"
+#include "lib/ring_buffer.h"
+#include "processor.h"
 #include <dispatch/dispatch.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -14,7 +14,7 @@ ring_buffer log_queue;
 
 static FILE *log_file = NULL;
 static pthread_t logger_thread;
-static volatile sig_atomic_t shutdown_requested = 0;
+static _Atomic int shutdown_requested = 0;
 
 dispatch_semaphore_t log_sem;
 
@@ -33,7 +33,7 @@ static void *logger_thread_func(void *arg) {
 
   atomic_store(&log_wakeup_pending, 0);
 
-  while (!shutdown_requested) {
+  while (!atomic_load(&shutdown_requested)) {
     dispatch_semaphore_wait(log_sem, DISPATCH_TIME_FOREVER);
 
     while (ring_buffer_try_dequeue(&log_queue, msg) == 0) {
@@ -71,7 +71,7 @@ void log_system_init(uint8_t proc_id) {
 }
 
 void log_system_shutdown(void) {
-  shutdown_requested = 1;
+  atomic_store(&shutdown_requested, 1);
 
   dispatch_semaphore_signal(log_sem);
 

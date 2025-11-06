@@ -1,8 +1,9 @@
 #include "task_management.h"
-#include "list.h"
-#include "log.h"
+#include "lib/list.h"
+#include "lib/log.h"
 #include "sys_config.h"
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -31,37 +32,64 @@ void task_management_init(void) {
   }
 }
 
-Job *create_job(const Task *parent_task, uint16_t global_core_id) {
-  uint16_t cid = global_core_id % NUM_CORES_PER_PROC;
+Job *create_job(const Task *parent_task, uint16_t core_id) {
+  if (core_pools[core_id].free_list == NULL) {
+    pthread_mutex_lock(&core_pools[core_id].remote_lock);
 
-  if (core_pools[cid].free_list == NULL) {
-    pthread_mutex_lock(&core_pools[cid].remote_lock);
+    core_pools[core_id].free_list = core_pools[core_id].remote_free_list;
+    core_pools[core_id].remote_free_list = NULL;
 
-    core_pools[cid].free_list = core_pools[cid].remote_free_list;
-    core_pools[cid].remote_free_list = NULL;
-
-    pthread_mutex_unlock(&core_pools[cid].remote_lock);
+    pthread_mutex_unlock(&core_pools[core_id].remote_lock);
   }
 
-  Job *new_job = (Job *)core_pools[cid].free_list;
+  Job *new_job = (Job *)core_pools[core_id].free_list;
 
   if (new_job != NULL) {
-    core_pools[cid].free_list = new_job->next_free;
+    core_pools[core_id].free_list = new_job->next_free;
     new_job->parent_task = parent_task;
     new_job->state = JOB_STATE_IDLE;
-    new_job->owner_core_id = global_core_id;
+    new_job->job_pool_id = core_id;
     INIT_LIST_HEAD(&new_job->link);
+
+    atomic_store_explicit(&new_job->refcount, 1, memory_order_release);
+    atomic_store_explicit(&new_job->is_being_offered, false,
+                          memory_order_release);
   }
 
   return new_job;
 }
 
-void release_job(Job *job, uint16_t global_core_id) {
+Job *clone_job(const Job *job, uint16_t core_id) {
+  if (job == NULL) {
+    return NULL;
+  }
+
+  Job *new_job = create_job(job->parent_task, core_id);
+  if (new_job == NULL) {
+    return NULL;
+  }
+  new_job->state = job->state;
+  new_job->arrival_time = job->arrival_time;
+  new_job->executed_time = job->executed_time;
+  new_job->acet = job->acet;
+  new_job->wcet = job->wcet;
+  new_job->actual_deadline = job->actual_deadline;
+  new_job->virtual_deadline = job->virtual_deadline;
+  new_job->is_replica = job->is_replica;
+  memcpy(new_job->relative_tuned_deadlines, job->relative_tuned_deadlines,
+         sizeof(uint32_t) * MAX_CRITICALITY_LEVELS);
+  new_job->is_being_offered =
+      atomic_load_explicit(&job->is_being_offered, memory_order_acquire);
+
+  return new_job;
+}
+
+void __release_job_to_pool(Job *job, uint16_t core_id) {
   if (job == NULL) {
     return;
   }
-  uint16_t owner = job->owner_core_id % NUM_CORES_PER_PROC;
-  uint16_t me = global_core_id % NUM_CORES_PER_PROC;
+  uint16_t owner = job->job_pool_id;
+  uint16_t me = core_id;
 
   if (owner == me) {
     job->next_free = core_pools[owner].free_list;
@@ -76,7 +104,7 @@ void release_job(Job *job, uint16_t global_core_id) {
 
 void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add) {
   if (queue_head == NULL || job_to_add == NULL) {
-    fprintf(stderr, "ERROR: Attempted to add job to a NULL queue.\n");
+    LOG(LOG_LEVEL_ERROR, "Attempted to add job to a NULL queue\n");
     return;
   }
   Job *cursor, *n;
@@ -104,18 +132,18 @@ Job *pop_next_job(struct list_head *queue_head) {
 }
 
 void remove_job_with_parent_task_id(struct list_head *queue_head,
-                                    uint32_t task_id, uint16_t global_core_id) {
+                                    uint32_t task_id, uint16_t core_id) {
   Job *cursor, *next;
 
   list_for_each_entry_safe(cursor, next, queue_head, link) {
     if (cursor->parent_task->id == task_id) {
       list_del(&cursor->link);
-      release_job(cursor, global_core_id);
+      put_job_ref(cursor, core_id);
     }
   }
 }
 
-static void job_to_str(const Job *job, char *buffer, size_t size) {
+static void job_to_str(Job *job, char *buffer, size_t size) {
   snprintf(buffer, size, "Job(ID:%u VDL:%u REM:%.2f)", job->parent_task->id,
            job->virtual_deadline, job->acet - job->executed_time);
 }

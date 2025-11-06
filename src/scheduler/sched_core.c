@@ -1,194 +1,32 @@
-#include "sched.h"
+#include "scheduler/sched_core.h"
+#include "scheduler/sched_migration.h"
+#include "scheduler/sched_util.h"
+
+#include "lib/list.h"
+#include "lib/log.h"
+#include "lib/ring_buffer.h"
+
 #include "ipc.h"
-#include "list.h"
-#include "log.h"
-#include "platform.h"
 #include "power_management.h"
-#include "ring_buffer.h"
+#include "processor.h"
 #include "sys_config.h"
 #include "task_alloc.h"
 #include "task_management.h"
-#include <math.h>
+
+#include <signal.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#define DEMAND_PADDING_PERCENT 0.25f
+CoreState core_states[NUM_CORES_PER_PROC];
 
-CoreState core_states[TOTAL_CORES];
+const Task *task_lookup[MAX_TASKS + 1];
 
-static bool decision_point;
-
-static const Task *task_lookup[MAX_TASKS + 1];
-
-static inline float rand_between(float min, float max) {
-  return min + (float)rand() / (float)RAND_MAX * (max - min);
-}
-
-static float generate_acet(Job *job) {
-  uint8_t criticality_chance = rand() % 100;
-  CriticalityLevel criticality_level = job->parent_task->criticality_level;
-
-  if (criticality_chance < 1) {
-    criticality_level = ASIL_D;
-  } else if (criticality_chance < 5) {
-    criticality_level = ASIL_C;
-  } else if (criticality_chance < 15) {
-    criticality_level = ASIL_B;
-  } else if (criticality_chance < 30) {
-    criticality_level = ASIL_A;
-  } else {
-    criticality_level = QM;
-  }
-
-  if (criticality_level < processor_state.system_criticality_level) {
-    criticality_level = processor_state.system_criticality_level;
-  }
-
-  float acet = rand_between(0.01f, 1.0f) *
-               (float)job->parent_task->wcet[criticality_level];
-
-  return acet;
-}
-
-static const Task *find_task_by_id(uint32_t task_id) {
-  if (task_id > MAX_TASKS)
-    return NULL;
-  return task_lookup[task_id];
-}
-
-float find_slack(uint16_t global_core_id, uint32_t t, float scaling_factor) {
-  CoreState *core_state = &core_states[global_core_id];
-  uint32_t current_time = processor_state.system_time;
-
-  if (t <= current_time) {
-    return 0;
-  }
-
-  float demand = 0;
-
-  // Demand from the currently running job
-  if (core_state->running_job != NULL) {
-    if (core_state->running_job->virtual_deadline <= t) {
-      demand += ceilf((core_state->running_job->wcet -
-                       core_state->running_job->executed_time) /
-                      scaling_factor);
-    }
-  }
-
-  // Demand from jobs already in the ready queue
-  Job *job;
-  list_for_each_entry(job, &core_state->ready_queue, link) {
-    if (job->virtual_deadline <= t) {
-      demand += ceilf((job->wcet - job->executed_time) / scaling_factor);
-    }
-  }
-  list_for_each_entry(job, &core_state->replica_queue, link) {
-    if (job->virtual_deadline <= t) {
-      demand += ceilf((job->wcet - job->executed_time) / scaling_factor);
-    }
-  }
-
-  // Demand from future job arrivals of high-criticality tasks
-  for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
-    const TaskAllocationMap *instance = &allocation_map[i];
-
-    if (instance->proc_id == core_state->proc_id &&
-        instance->core_id == core_state->core_id) {
-      const Task *task = find_task_by_id(instance->task_id);
-
-      if (task->criticality_level >= core_state->local_criticality_level) {
-        uint32_t wcet = task->wcet[core_state->local_criticality_level];
-        uint32_t period = task->period;
-
-        uint32_t arrival_time = (current_time / period + 1) * period;
-        while (1) {
-          uint32_t future_job_deadline =
-              arrival_time +
-              instance->tuned_deadlines[core_state->local_criticality_level];
-
-          if (future_job_deadline > t) {
-            break;
-          }
-          demand += ceilf((float)wcet / scaling_factor);
-          arrival_time += period;
-        }
-      }
-    }
-  }
-
-  float interval_length = (float)(t - current_time);
-
-  if (demand >= interval_length) {
-    return 0;
-  }
-
-  return interval_length - demand;
-}
-
-const Task *find_next_arrival_task(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
-  const Task *next_task = NULL;
-  uint32_t min_arrival_time = UINT32_MAX;
-
-  for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
-    const TaskAllocationMap *instance = &allocation_map[i];
-
-    if (instance->proc_id == core_state->proc_id &&
-        instance->core_id == core_state->core_id) {
-      const Task *task = find_task_by_id(instance->task_id);
-      if (!task || task->period == 0) {
-        continue;
-      }
-
-      uint32_t current_time = processor_state.system_time;
-      uint32_t remainder = current_time % task->period;
-      uint32_t next_arrival = (remainder == 0)
-                                  ? current_time
-                                  : current_time + (task->period - remainder);
-
-      if (next_arrival < min_arrival_time) {
-        min_arrival_time = next_arrival;
-        next_task = task;
-      }
-    }
-  }
-  return next_task;
-}
-
-static bool is_admissible(uint16_t global_core_id, Job *candidate_job) {
-  CoreState *core_state = &core_states[global_core_id];
-  float max_scaling_factor = 1.0f;
-  float time_needed_for_candidate =
-      ceilf((candidate_job->wcet - candidate_job->executed_time) /
-            max_scaling_factor * (1 + DEMAND_PADDING_PERCENT));
-  if (find_slack(global_core_id, candidate_job->virtual_deadline,
-                 max_scaling_factor) < time_needed_for_candidate) {
-    return false;
-  }
-  Job *cur;
-  list_for_each_entry(cur, &core_state->replica_queue, link) {
-    uint32_t deadline = cur->virtual_deadline;
-    float slack = find_slack(global_core_id, deadline, max_scaling_factor);
-    if (slack < time_needed_for_candidate) {
-      return false;
-    }
-  }
-  list_for_each_entry(cur, &core_state->ready_queue, link) {
-    uint32_t deadline = cur->virtual_deadline;
-    float slack = find_slack(global_core_id, deadline, max_scaling_factor);
-    if (slack < time_needed_for_candidate) {
-      return false;
-    }
-  }
-  return true;
-}
-
-static void handle_job_completion(uint16_t global_core_id) {
-  decision_point = true;
-  CoreState *core_state = &core_states[global_core_id];
+static void handle_job_completion(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
+  core_state->decision_point = true;
   Job *completed_job = core_state->running_job;
 
   if (completed_job == NULL) {
@@ -208,13 +46,13 @@ static void handle_job_completion(uint16_t global_core_id) {
   ring_buffer_enqueue(&processor_state.outgoing_completion_msg_queue,
                       &outgoing_msg);
 
-  release_job(completed_job, global_core_id);
   core_state->running_job = NULL;
   core_state->is_idle = true;
+  put_job_ref(completed_job, core_id);
 }
 
-static void remove_completed_jobs(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
+static void remove_completed_jobs(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
   completion_message *incoming_msg;
   ring_buffer *incoming_queue = &processor_state.incoming_completion_msg_queue;
   ring_buffer_iter_read_unsafe(incoming_queue, incoming_msg) {
@@ -222,8 +60,9 @@ static void remove_completed_jobs(uint16_t global_core_id) {
     list_for_each_entry_safe(cur, next, &core_state->replica_queue, link) {
       if (cur->parent_task->id == incoming_msg->completed_task_id &&
           cur->arrival_time == incoming_msg->job_arrival_time) {
+        cur->state = JOB_STATE_REMOVED;
         list_del(&cur->link);
-        release_job(cur, global_core_id);
+        put_job_ref(cur, core_id);
         LOG(LOG_LEVEL_INFO, "Removed replica job %d",
             incoming_msg->completed_task_id);
       }
@@ -231,8 +70,9 @@ static void remove_completed_jobs(uint16_t global_core_id) {
     list_for_each_entry_safe(cur, next, &core_state->ready_queue, link) {
       if (cur->parent_task->id == incoming_msg->completed_task_id &&
           cur->arrival_time == incoming_msg->job_arrival_time) {
+        cur->state = JOB_STATE_REMOVED;
         list_del(&cur->link);
-        release_job(cur, global_core_id);
+        put_job_ref(cur, core_id);
         LOG(LOG_LEVEL_INFO, "Removed ready job %d",
             incoming_msg->completed_task_id);
       }
@@ -244,7 +84,7 @@ static void remove_completed_jobs(uint16_t global_core_id) {
       Job *running_job = core_state->running_job;
       core_state->running_job = NULL;
       running_job->state = JOB_STATE_COMPLETED;
-      release_job(running_job, global_core_id);
+      put_job_ref(running_job, core_id);
       core_state->is_idle = true;
       LOG(LOG_LEVEL_INFO, "Removed running job %d",
           incoming_msg->completed_task_id);
@@ -252,10 +92,10 @@ static void remove_completed_jobs(uint16_t global_core_id) {
   }
 }
 
-static void handle_mode_change(uint16_t global_core_id,
+static void handle_mode_change(uint16_t core_id,
                                CriticalityLevel new_criticality_level) {
-  decision_point = true;
-  CoreState *core_state = &core_states[global_core_id];
+  CoreState *core_state = &core_states[core_id];
+  core_state->decision_point = true;
 
   atomic_store(&processor_state.system_criticality_level,
                new_criticality_level);
@@ -279,7 +119,7 @@ static void handle_mode_change(uint16_t global_core_id,
   LIST_HEAD(new_ready_queue);
   LIST_HEAD(new_replica_queue);
 
-  while (peek_next_job(&core_state->ready_queue) != NULL) {
+  while (!list_empty(&core_state->ready_queue)) {
     Job *current_job = pop_next_job(&core_state->ready_queue);
     current_job->virtual_deadline =
         current_job->arrival_time +
@@ -297,7 +137,7 @@ static void handle_mode_change(uint16_t global_core_id,
     }
   }
 
-  while (peek_next_job(&core_state->replica_queue) != NULL) {
+  while (!list_empty(&core_state->replica_queue)) {
     Job *current_job = pop_next_job(&core_state->replica_queue);
     current_job->virtual_deadline =
         current_job->arrival_time +
@@ -319,8 +159,38 @@ static void handle_mode_change(uint16_t global_core_id,
   list_splice_init(&new_replica_queue, &core_state->replica_queue);
 }
 
-static void handle_job_arrivals(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
+static void handle_job_arrivals(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
+
+  Job *new_job;
+  list_for_each_entry(new_job, &core_state->pending_jobs_queue, link) {
+    if (new_job->arrival_time > processor_state.system_time) {
+      continue;
+    }
+
+    list_del(&new_job->link);
+
+    LOG(LOG_LEVEL_INFO,
+        "Job %d (from pending) arrived with deadline (actual: %d, virtual: "
+        "%d) with ACET %.2f and "
+        "WCET %.2f",
+        new_job->parent_task->id, new_job->actual_deadline,
+        new_job->virtual_deadline, new_job->acet, new_job->wcet);
+
+    new_job->arrival_time = processor_state.system_time;
+
+    if (new_job->parent_task->criticality_level <
+        core_state->local_criticality_level) {
+      add_to_queue_sorted(&core_state->discard_list, new_job);
+    } else {
+      core_state->decision_point = true;
+      if (new_job->is_replica) {
+        add_to_queue_sorted(&core_state->replica_queue, new_job);
+      } else {
+        add_to_queue_sorted(&core_state->ready_queue, new_job);
+      }
+    }
+  }
 
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
     const TaskAllocationMap *instance = &allocation_map[i];
@@ -329,10 +199,14 @@ static void handle_job_arrivals(uint16_t global_core_id) {
         instance->core_id == core_state->core_id) {
       const Task *task = find_task_by_id(instance->task_id);
 
+      if (!task || task->period == 0) {
+        continue;
+      }
+
       if (processor_state.system_time % task->period != 0) {
         continue;
       }
-      Job *new_job = create_job(task, global_core_id);
+      new_job = create_job(task, core_id);
       if (new_job == NULL) {
         continue;
       }
@@ -371,7 +245,7 @@ static void handle_job_arrivals(uint16_t global_core_id) {
           core_state->local_criticality_level) {
         add_to_queue_sorted(&core_state->discard_list, new_job);
       } else {
-        decision_point = true;
+        core_state->decision_point = true;
         if (new_job->is_replica) {
           add_to_queue_sorted(&core_state->replica_queue, new_job);
         } else {
@@ -382,26 +256,28 @@ static void handle_job_arrivals(uint16_t global_core_id) {
   }
 }
 
-static void handle_running_job(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
+static void handle_running_job(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
 
   if (core_state->running_job != NULL) {
     core_state->running_job->executed_time +=
-        power_get_current_scaling_factor(global_core_id);
+        power_get_current_scaling_factor(core_id);
 
     // Incase job isn't able to meet deadline
-    if (core_state->running_job->state != JOB_STATE_COMPLETED &&
+    if (core_state->running_job->state == JOB_STATE_RUNNING &&
         processor_state.system_time >
             core_state->running_job->actual_deadline) {
-      LOG(LOG_LEVEL_ERROR, "Job %d missed its deadline",
-          core_state->running_job->parent_task->id);
+      LOG(LOG_LEVEL_ERROR, "Job %d missed its deadline %d",
+          core_state->running_job->parent_task->id,
+          core_state->running_job->actual_deadline);
       LOG(LOG_LEVEL_FATAL, "System Halted due to Deadline Miss");
-      exit(1);
+      fputs("System Halted due to Deadline Miss\n", stderr);
+      kill(getppid(), SIGINT);
     }
 
     if (core_state->running_job->acet <=
         core_state->running_job->executed_time) {
-      handle_job_completion(global_core_id);
+      handle_job_completion(core_id);
     } else if (core_state->running_job->wcet <=
                core_state->running_job->executed_time) {
       CriticalityLevel new_criticality_level =
@@ -415,13 +291,13 @@ static void handle_running_job(uint16_t global_core_id) {
         }
       }
       ipc_broadcast_criticality_change(new_criticality_level);
-      handle_mode_change(global_core_id, new_criticality_level);
+      handle_mode_change(core_id, new_criticality_level);
     }
   }
 }
 
-static Job *select_next_job(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
+static Job *select_next_job(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
   bool from_ready_queue = false;
 
   Job *next_job_candidate;
@@ -459,8 +335,8 @@ static Job *select_next_job(uint16_t global_core_id) {
   return NULL;
 }
 
-static void dispatch_job(uint16_t global_core_id, Job *job_to_dispatch) {
-  CoreState *core_state = &core_states[global_core_id];
+static void dispatch_job(uint16_t core_id, Job *job_to_dispatch) {
+  CoreState *core_state = &core_states[core_id];
 
   if (core_state->running_job != NULL) {
     Job *current_job = core_state->running_job;
@@ -479,23 +355,23 @@ static void dispatch_job(uint16_t global_core_id, Job *job_to_dispatch) {
   LOG(LOG_LEVEL_INFO, "Dispatching Job %d", job_to_dispatch->parent_task->id);
 }
 
-static void reclaim_discarded_jobs(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
+static void reclaim_discarded_jobs(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
 
-  while (peek_next_job(&core_state->discard_list) != NULL) {
+  while (!list_empty(&core_state->discard_list)) {
     Job *discarded_job = pop_next_job(&core_state->discard_list);
 
-    if (is_admissible(global_core_id, discarded_job)) {
+    if (is_admissible(core_id, discarded_job)) {
       LOG(LOG_LEVEL_INFO,
           "Accommodating discarded job %d (Original Core ID: %u)",
-          discarded_job->parent_task->id, discarded_job->owner_core_id);
-      decision_point = true;
+          discarded_job->parent_task->id, discarded_job->job_pool_id);
+      core_state->decision_point = true;
       if (discarded_job->is_replica) {
         add_to_queue_sorted(&core_state->replica_queue, discarded_job);
       } else {
         add_to_queue_sorted(&core_state->ready_queue, discarded_job);
       }
-    } else {
+    } else if (!atomic_load(&discarded_job->is_being_offered)) {
       pthread_mutex_lock(&processor_state.discard_queue_lock);
       discarded_job->virtual_deadline = discarded_job->actual_deadline;
       add_to_queue_sorted(&processor_state.discard_queue, discarded_job);
@@ -506,11 +382,11 @@ static void reclaim_discarded_jobs(uint16_t global_core_id) {
   Job *cur, *next;
   pthread_mutex_lock(&processor_state.discard_queue_lock);
   list_for_each_entry_safe(cur, next, &processor_state.discard_queue, link) {
-    if (is_admissible(global_core_id, cur)) {
+    if (is_admissible(core_id, cur)) {
       LOG(LOG_LEVEL_INFO,
           "Accommodating discarded job %d (Original Core ID: %u)",
-          cur->parent_task->id, cur->owner_core_id);
-      decision_point = true;
+          cur->parent_task->id, cur->job_pool_id);
+      core_state->decision_point = true;
       list_del(&cur->link);
       if (cur->is_replica) {
         add_to_queue_sorted(&core_state->replica_queue, cur);
@@ -528,9 +404,9 @@ void scheduler_init(void) {
   task_management_init();
   power_management_init();
 
-  for (int i = 0; i < TOTAL_CORES; i++) {
-    core_states[i].proc_id = i / NUM_CORES_PER_PROC;
-    core_states[i].core_id = i % NUM_CORES_PER_PROC;
+  for (int i = 0; i < NUM_CORES_PER_PROC; i++) {
+    core_states[i].proc_id = processor_state.processor_id;
+    core_states[i].core_id = i;
     core_states[i].running_job = NULL;
     core_states[i].is_idle = true;
     core_states[i].current_dvfs_level = 0;
@@ -538,7 +414,18 @@ void scheduler_init(void) {
     INIT_LIST_HEAD(&core_states[i].ready_queue);
     INIT_LIST_HEAD(&core_states[i].replica_queue);
     INIT_LIST_HEAD(&core_states[i].discard_list);
+    INIT_LIST_HEAD(&core_states[i].pending_jobs_queue);
+    INIT_LIST_HEAD(&core_states[i].bid_history_queue);
+
+    ring_buffer_init(&core_states[i].award_notification_queue,
+                     MAX_CONCURRENT_OFFERS, core_states[i].award_buf,
+                     core_states[i].seq, sizeof(Job *));
+
+    core_states[i].local_criticality_level = QM;
+    core_states[i].decision_point = false;
   }
+
+  init_migration();
 
   for (uint32_t i = 0; i < SYSTEM_TASKS_SIZE; i++) {
     task_lookup[system_tasks[i].id] = &system_tasks[i];
@@ -547,8 +434,8 @@ void scheduler_init(void) {
   LOG(LOG_LEVEL_INFO, "Scheduler Initialization Complete.");
 }
 
-static inline void log_core_state(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
+static inline void log_core_state(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
 
   if (core_state->is_idle) {
     LOG(LOG_LEVEL_DEBUG, "Status: IDLE");
@@ -560,7 +447,7 @@ static inline void log_core_state(uint16_t global_core_id) {
 
   LOG(LOG_LEVEL_DEBUG, "DVFS Level: %u, Frequency Scaling: %.2f",
       core_state->current_dvfs_level,
-      power_get_current_scaling_factor(global_core_id));
+      power_get_current_scaling_factor(core_id));
   LOG(LOG_LEVEL_DEBUG, "Criticality Level: %u",
       core_state->local_criticality_level);
 
@@ -568,16 +455,12 @@ static inline void log_core_state(uint16_t global_core_id) {
   log_job_queue(LOG_LEVEL_DEBUG, "Replica Queue", &core_state->replica_queue);
 }
 
-void scheduler_tick(uint16_t global_core_id) {
-  if (global_core_id >= TOTAL_CORES) {
-    return;
-  }
+void scheduler_tick(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
 
-  CoreState *core_state = &core_states[global_core_id];
   if (core_state->local_criticality_level !=
       atomic_load(&processor_state.system_criticality_level)) {
-    handle_mode_change(global_core_id,
-                       processor_state.system_criticality_level);
+    handle_mode_change(core_id, processor_state.system_criticality_level);
   }
 
   if (core_state->dpm_control_block.in_low_power_state) {
@@ -591,36 +474,45 @@ void scheduler_tick(uint16_t global_core_id) {
     }
   }
 
-  handle_job_arrivals(global_core_id);
+  handle_offer_cleanup(core_id);
 
-  handle_running_job(global_core_id);
+  handle_running_job(core_id);
 
-  reclaim_discarded_jobs(global_core_id);
+  process_award_notifications(core_id);
 
-  remove_completed_jobs(global_core_id);
+  handle_job_arrivals(core_id);
 
-  Job *next_job = select_next_job(global_core_id);
+  attempt_migration_push(core_id);
+
+  participate_in_auctions(core_id);
+
+  reclaim_discarded_jobs(core_id);
+
+  remove_completed_jobs(core_id);
+
+  Job *next_job = select_next_job(core_id);
 
   if (next_job != NULL) {
-    decision_point = true;
-    dispatch_job(global_core_id, next_job);
+    core_state->decision_point = true;
+    dispatch_job(core_id, next_job);
   }
 
-  if (decision_point) {
+  if (core_state->decision_point) {
     if (core_state->running_job != NULL &&
         core_state->running_job->parent_task->criticality_level <
             atomic_load(&processor_state.system_criticality_level)) {
-      power_set_dvfs_level(global_core_id, 0);
+      power_set_dvfs_level(core_id, 0);
     } else {
-      power_set_dvfs_level(global_core_id,
-                           calc_required_dvfs_level(global_core_id));
+      power_set_dvfs_level(core_id, calc_required_dvfs_level(core_id));
     }
-    decision_point = false;
+    core_state->decision_point = false;
   }
 
-  if (core_state->is_idle) {
-    power_management_set_dpm_interval(global_core_id);
+  if (core_state->is_idle && list_empty(&core_state->bid_history_queue)) {
+    power_management_set_dpm_interval(core_id);
   }
 
-  log_core_state(global_core_id);
+  remove_expired_bid_entries(core_id);
+
+  log_core_state(core_id);
 }

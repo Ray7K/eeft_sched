@@ -1,7 +1,9 @@
-#include "barrier.h"
-#include "log.h"
-#include "platform.h"
+#include "lib/barrier.h"
+#include "lib/log.h"
+
+#include "processor.h"
 #include "sys_config.h"
+
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/ipc.h>
@@ -12,9 +14,17 @@
 
 LogLevel current_log_level = LOG_LEVEL_DEBUG;
 
+static volatile sig_atomic_t shutdown_requested = 0;
+
 barrier *proc_barrier = NULL;
 
-static void sigint_handler(int signum) { (void)signum; }
+static void sigint_handler(int signum) {
+  (void)signum;
+  shutdown_requested = 1;
+  kill(0, SIGTERM);
+}
+
+static void sigterm_handler(int signum) { (void)signum; }
 
 int main(int argc, char *argv[]) {
   srand((unsigned)time(NULL));
@@ -23,6 +33,7 @@ int main(int argc, char *argv[]) {
   (void)argv;
 
   signal(SIGINT, sigint_handler);
+  signal(SIGTERM, sigterm_handler);
 
   int shmid;
 
@@ -50,14 +61,23 @@ int main(int argc, char *argv[]) {
       return 1;
     }
     if (pid == 0) {
-      platform_init(proc_id);
-      platform_run();
+      processor_init(proc_id);
+      processor_run();
       exit(0);
     }
   }
 
-  for (uint8_t proc_id = 0; proc_id < NUM_PROC; proc_id++) {
-    wait(NULL);
+  while (!shutdown_requested) {
+    pid_t pid = wait(NULL);
+    if (pid < 0) {
+      if (errno == EINTR) {
+        if (shutdown_requested) {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
   }
 
   barrier_destroy(proc_barrier);

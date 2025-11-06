@@ -1,9 +1,9 @@
-#ifndef PLATFORM_H
-#define PLATFORM_H
+#ifndef PROCESSOR_H
+#define PROCESSOR_H
 
-#include "barrier.h"
-#include "list.h"
-#include "ring_buffer.h"
+#include "lib/barrier.h"
+#include "lib/list.h"
+#include "lib/ring_buffer.h"
 #include "sys_config.h"
 #include <pthread.h>
 #include <stdatomic.h>
@@ -11,11 +11,12 @@
 #include <stdio.h>
 
 #define TOTAL_CORES (NUM_PROC * NUM_CORES_PER_PROC)
+
 #define MAX_LOG_MSG_SIZE 256
 
 typedef struct {
   _Atomic CriticalityLevel system_criticality_level;
-  volatile uint32_t system_time;
+  _Atomic uint32_t system_time;
 
   struct list_head discard_queue;
   pthread_mutex_t discard_queue_lock;
@@ -26,16 +27,22 @@ typedef struct {
   uint8_t processor_id;
   barrier core_completion_barrier;
   barrier time_sync_barrier;
+
+  struct list_head ready_job_offer_queue;
+  pthread_mutex_t ready_job_offer_queue_lock;
+
+  struct list_head future_job_offer_queue;
+  pthread_mutex_t future_job_offer_queue_lock;
 } ProcessorState;
 
 extern barrier *proc_barrier;
 
 extern ProcessorState processor_state;
 
-void platform_init(uint8_t proc_id);
+void processor_init(uint8_t proc_id);
 
-void platform_run(void);
+void processor_run(void);
 
-void platform_cleanup(void);
+void processor_cleanup(void);
 
 #endif

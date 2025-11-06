@@ -1,5 +1,5 @@
-#include "list.h"
-#include "tests.h"
+#include "lib/list.h"
+#include "tests/tests.h"
 #include <stddef.h>
 
 struct my_node {

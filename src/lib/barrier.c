@@ -1,4 +1,4 @@
-#include "barrier.h"
+#include "lib/barrier.h"
 
 int barrier_init(barrier *barrier, unsigned n, int pshared) {
   if (n == 0) {

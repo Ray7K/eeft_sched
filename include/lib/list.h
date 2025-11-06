@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 
 struct list_head {
   struct list_head *next, *prev;
@@ -45,16 +46,30 @@ static inline void list_del(struct list_head *entry) {
 #define list_first_entry(ptr, type, member)                                    \
   ((ptr)->next == (ptr) ? NULL : list_entry((ptr)->next, type, member))
 
+#define list_last_entry(ptr, type, member)                                     \
+  ((ptr)->prev == (ptr) ? NULL : list_entry((ptr)->prev, type, member))
+
 #define list_for_each_entry(pos, head, member)                                 \
   for ((pos) = list_entry((head)->next, __typeof__(*(pos)), member);           \
        &(pos)->member != (head);                                               \
        (pos) = list_entry((pos)->member.next, __typeof__(*(pos)), member))
+
+#define list_for_each_entry_rev(pos, head, member)                             \
+  for ((pos) = list_entry((head)->prev, __typeof__(*(pos)), member);           \
+       &(pos)->member != (head);                                               \
+       (pos) = list_entry((pos)->member.prev, __typeof__(*(pos)), member))
 
 #define list_for_each_entry_safe(pos, n, head, member)                         \
   for ((pos) = list_entry((head)->next, __typeof__(*(pos)), member),           \
       (n) = list_entry((pos)->member.next, __typeof__(*(pos)), member);        \
        &(pos)->member != (head); (pos) = (n),                                  \
       (n) = list_entry((n)->member.next, __typeof__(*(pos)), member))
+
+#define list_for_each_entry_rev_safe(pos, n, head, member)                     \
+  for ((pos) = list_entry((head)->prev, __typeof__(*(pos)), member),           \
+      (n) = list_entry((pos)->member.prev, __typeof__(*(pos)), member);        \
+       &(pos)->member != (head); (pos) = (n),                                  \
+      (n) = list_entry((n)->member.prev, __typeof__(*(pos)), member))
 
 static inline bool list_empty(const struct list_head *head) {
   return head->next == head;

@@ -1,8 +1,9 @@
 #include "power_management.h"
-#include "list.h"
-#include "log.h"
-#include "platform.h"
-#include "sched.h"
+#include "lib/list.h"
+#include "lib/log.h"
+#include "processor.h"
+#include "scheduler/sched_core.h"
+#include "scheduler/sched_util.h"
 #include <float.h>
 #include <math.h>
 #include <stdint.h>
@@ -17,13 +18,12 @@ void power_management_init(void) {
   LOG(LOG_LEVEL_INFO, "Power Management Initialized.");
 }
 
-float power_get_current_scaling_factor(uint16_t global_core_id) {
-  return dvfs_levels[core_states[global_core_id].current_dvfs_level]
-      .scaling_factor;
+float power_get_current_scaling_factor(uint16_t core_id) {
+  return dvfs_levels[core_states[core_id].current_dvfs_level].scaling_factor;
 }
 
-uint8_t calc_required_dvfs_level(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
+uint8_t calc_required_dvfs_level(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
   if (core_state->is_idle || core_state->running_job == NULL) {
     return NUM_DVFS_LEVELS - 1;
   }
@@ -39,11 +39,11 @@ uint8_t calc_required_dvfs_level(uint16_t global_core_id) {
 
   Job *cur;
   list_for_each_entry(cur, &core_state->ready_queue, link) {
-    float slack = find_slack(global_core_id, cur->virtual_deadline, 1.0f);
+    float slack = find_slack(core_id, cur->virtual_deadline, 1.0f);
     min_slack = (min_slack < slack) ? min_slack : slack;
   }
   list_for_each_entry(cur, &core_state->replica_queue, link) {
-    float slack = find_slack(global_core_id, cur->virtual_deadline, 1.0f);
+    float slack = find_slack(core_id, cur->virtual_deadline, 1.0f);
     min_slack = (min_slack < slack) ? min_slack : slack;
   }
 
@@ -66,26 +66,26 @@ uint8_t calc_required_dvfs_level(uint16_t global_core_id) {
   return dvfs_level;
 }
 
-void power_set_dvfs_level(uint16_t global_core_id, uint8_t level_idx) {
+void power_set_dvfs_level(uint16_t core_id, uint8_t level_idx) {
   if (level_idx < NUM_DVFS_LEVELS) {
-    core_states[global_core_id].current_dvfs_level = level_idx;
+    core_states[core_id].current_dvfs_level = level_idx;
     LOG(LOG_LEVEL_DEBUG, "DVFS level set to %u (Freq: %uMHz, Scale: %.2f)",
         level_idx, dvfs_levels[level_idx].frequency_mhz,
         dvfs_levels[level_idx].scaling_factor);
   }
 }
 
-uint8_t power_get_current_dvfs_level(uint16_t global_core_id) {
-  return core_states[global_core_id].current_dvfs_level;
+uint8_t power_get_current_dvfs_level(uint16_t core_id) {
+  return core_states[core_id].current_dvfs_level;
 }
 
-void power_management_set_dpm_interval(uint16_t global_core_id) {
-  CoreState *core_state = &core_states[global_core_id];
+void power_management_set_dpm_interval(uint16_t core_id) {
+  CoreState *core_state = &core_states[core_id];
   if (core_state->is_idle) {
     if (core_state->dpm_control_block.in_low_power_state) {
       return;
     }
-    const Task *next_arrival_task = find_next_arrival_task(global_core_id);
+    const Task *next_arrival_task = find_next_arrival_task(core_id);
     if (next_arrival_task == NULL) {
       LOG(LOG_LEVEL_INFO,
           "No upcoming task arrivals. Entering indefinite low power state...");

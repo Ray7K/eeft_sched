@@ -1,6 +1,6 @@
-#include "barrier.h"
-#include "ring_buffer.h"
-#include "tests.h"
+#include "lib/barrier.h"
+#include "lib/ring_buffer.h"
+#include "tests/tests.h"
 #include <pthread.h>
 #include <stdlib.h>
 
