@@ -11,10 +11,10 @@
 
 #define DEMAND_PADDING_PERCENT 0.25f
 
-float generate_acet(Job *job) {
+float generate_acet(job_struct *job) {
   uint8_t criticality_chance = rand() % 100;
 
-  CriticalityLevel criticality_level = job->parent_task->criticality_level;
+  criticality_level criticality_level = job->parent_task->crit_level;
 
   if (criticality_chance < 1) {
     criticality_level = ASIL_D;
@@ -28,8 +28,8 @@ float generate_acet(Job *job) {
     criticality_level = QM;
   }
 
-  if (criticality_level < processor_state.system_criticality_level) {
-    criticality_level = processor_state.system_criticality_level;
+  if (criticality_level < proc_state.system_criticality_level) {
+    criticality_level = proc_state.system_criticality_level;
   }
 
   float acet = rand_between(0.1f, 1.0f) *
@@ -38,10 +38,10 @@ float generate_acet(Job *job) {
   return acet;
 }
 
-float find_slack(uint16_t core_id, CriticalityLevel crit_lvl, uint32_t tstart,
+float find_slack(uint8_t core_id, criticality_level crit_lvl, uint32_t tstart,
                  uint32_t tend, float scaling_factor) {
   CoreState *core_state = &core_states[core_id];
-  uint32_t current_time = processor_state.system_time;
+  uint32_t current_time = proc_state.system_time;
 
   if (tend <= current_time) {
     return 0;
@@ -74,7 +74,7 @@ float find_slack(uint16_t core_id, CriticalityLevel crit_lvl, uint32_t tstart,
     }
   }
 
-  Job *job;
+  job_struct *job;
   list_for_each_entry(job, &core_state->ready_queue, link) {
     uint32_t virtual_deadline =
         job->arrival_time + job->relative_tuned_deadlines[crit_lvl];
@@ -124,13 +124,13 @@ float find_slack(uint16_t core_id, CriticalityLevel crit_lvl, uint32_t tstart,
   }
 
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
-    const TaskAllocationMap *instance = &allocation_map[i];
+    const task_alloc_map *instance = &allocation_map[i];
 
     if (instance->proc_id == core_state->proc_id &&
         instance->core_id == core_state->core_id) {
-      const Task *task = find_task_by_id(instance->task_id);
+      const task_struct *task = find_task_by_id(instance->task_id);
 
-      if (task->criticality_level >= crit_lvl) {
+      if (task->crit_level >= crit_lvl) {
         uint32_t wcet = task->wcet[crit_lvl];
         uint32_t period = task->period;
 
@@ -162,30 +162,30 @@ float find_slack(uint16_t core_id, CriticalityLevel crit_lvl, uint32_t tstart,
   return interval_length - demand;
 }
 
-uint32_t find_next_effective_arrival_time(uint16_t core_id) {
+uint32_t find_next_effective_arrival_time(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
   uint32_t min_arrival_time = UINT32_MAX;
 
-  Job *pending;
+  job_struct *pending;
   list_for_each_entry(pending, &core_state->pending_jobs_queue, link) {
-    if (pending->arrival_time >= processor_state.system_time &&
+    if (pending->arrival_time >= proc_state.system_time &&
         pending->arrival_time < min_arrival_time) {
       min_arrival_time = pending->arrival_time;
     }
   }
 
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
-    const TaskAllocationMap *instance = &allocation_map[i];
+    const task_alloc_map *instance = &allocation_map[i];
 
     if (instance->proc_id != core_state->proc_id ||
         instance->core_id != core_state->core_id)
       continue;
 
-    const Task *task = find_task_by_id(instance->task_id);
+    const task_struct *task = find_task_by_id(instance->task_id);
     if (!task || task->period == 0)
       continue;
 
-    uint32_t current_time = processor_state.system_time;
+    uint32_t current_time = proc_state.system_time;
     uint32_t remainder = current_time % task->period;
     uint32_t next_arrival = (remainder == 0)
                                 ? current_time
@@ -213,11 +213,11 @@ uint32_t find_next_effective_arrival_time(uint16_t core_id) {
   return min_arrival_time;
 }
 
-bool is_admissible(uint16_t core_id, Job *candidate_job) {
+bool is_admissible(uint8_t core_id, job_struct *candidate_job) {
   CoreState *core_state = &core_states[core_id];
   float max_scaling_factor = 1.0f;
 
-  CriticalityLevel cur_criticality_level = core_state->local_criticality_level;
+  criticality_level cur_criticality_level = core_state->local_criticality_level;
   uint32_t tstart = candidate_job->arrival_time;
 
   for (uint8_t crit_lvl = cur_criticality_level;
@@ -237,7 +237,7 @@ bool is_admissible(uint16_t core_id, Job *candidate_job) {
       return false;
     }
 
-    Job *cur;
+    job_struct *cur;
     list_for_each_entry(cur, &core_state->replica_queue, link) {
       virtual_deadline =
           cur->arrival_time + cur->relative_tuned_deadlines[crit_lvl];
@@ -289,12 +289,12 @@ bool is_admissible(uint16_t core_id, Job *candidate_job) {
   return true;
 }
 
-float get_util(uint16_t core_id) {
+float get_util(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
 
   float util = 0.0f;
 
-  Job *cur;
+  job_struct *cur;
   list_for_each_entry(cur, &core_state->ready_queue, link) {
     util += cur->wcet / (float)cur->parent_task->period;
   }

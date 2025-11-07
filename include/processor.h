@@ -15,7 +15,7 @@
 #define MAX_LOG_MSG_SIZE 256
 
 typedef struct {
-  _Atomic CriticalityLevel system_criticality_level;
+  _Atomic criticality_level system_criticality_level;
   _Atomic uint32_t system_time;
 
   struct list_head discard_queue;
@@ -33,11 +33,11 @@ typedef struct {
 
   struct list_head future_job_offer_queue;
   pthread_mutex_t future_job_offer_queue_lock;
-} ProcessorState;
+} processor_state;
 
 extern barrier *proc_barrier;
 
-extern ProcessorState processor_state;
+extern processor_state proc_state;
 
 void processor_init(uint8_t proc_id);
 

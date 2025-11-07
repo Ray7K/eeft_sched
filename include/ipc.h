@@ -19,11 +19,11 @@ typedef struct {
 } completion_message;
 
 typedef struct {
-  CriticalityLevel new_level;
+  criticality_level new_level;
 } criticality_change_message;
 
 void ipc_thread_init(void);
-void ipc_broadcast_criticality_change(CriticalityLevel new_level);
+void ipc_broadcast_criticality_change(criticality_level new_level);
 void ipc_send_completion_messages(void);
 void ipc_receive_completion_messages(void);
 void ipc_cleanup(void);

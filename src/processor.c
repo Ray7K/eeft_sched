@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-ProcessorState processor_state;
+processor_state proc_state;
 
 barrier *proc_barrier __attribute__((weak)) = NULL;
 
@@ -22,33 +22,32 @@ static volatile sig_atomic_t shutdown_requested = 0;
 #define TOTAL_TICKS 0
 #endif
 
-__thread LogThreadContext log_thread_context = {0, 0, false};
+__thread log_thread_context log_thread_ctx = {0, 0, false};
 
 static void *timer_thread_func(void *arg) {
   (void)arg;
 
   while (!shutdown_requested) {
-    barrier_wait(&processor_state.core_completion_barrier);
-    ring_buffer_clear(&processor_state.incoming_completion_msg_queue);
+    barrier_wait(&proc_state.core_completion_barrier);
+    ring_buffer_clear(&proc_state.incoming_completion_msg_queue);
 
     ipc_receive_completion_messages();
 
-    Job *cur, *next;
-    pthread_mutex_lock(&processor_state.discard_queue_lock);
-    list_for_each_entry_safe(cur, next, &processor_state.discard_queue, link) {
-      if (cur->actual_deadline <= processor_state.system_time) {
+    job_struct *cur, *next;
+    pthread_mutex_lock(&proc_state.discard_queue_lock);
+    list_for_each_entry_safe(cur, next, &proc_state.discard_queue, link) {
+      if (cur->actual_deadline <= proc_state.system_time) {
         LOG(LOG_LEVEL_INFO, "Releasing job with parent task ID %d",
             cur->parent_task->id);
         list_del(&cur->link);
         put_job_ref(cur, NUM_CORES_PER_PROC);
       }
     }
-    pthread_mutex_unlock(&processor_state.discard_queue_lock);
+    pthread_mutex_unlock(&proc_state.discard_queue_lock);
 
-    atomic_fetch_add_explicit(&processor_state.system_time, 1,
-                              memory_order_relaxed);
+    atomic_fetch_add_explicit(&proc_state.system_time, 1, memory_order_relaxed);
 
-    if (TOTAL_TICKS > 0 && processor_state.system_time >= TOTAL_TICKS) {
+    if (TOTAL_TICKS > 0 && proc_state.system_time >= TOTAL_TICKS) {
       shutdown_requested = 1;
     }
 
@@ -56,7 +55,7 @@ static void *timer_thread_func(void *arg) {
 
     ipc_send_completion_messages();
 
-    barrier_wait(&processor_state.time_sync_barrier);
+    barrier_wait(&proc_state.time_sync_barrier);
 
     if (proc_barrier) {
       barrier_wait(proc_barrier);
@@ -67,14 +66,14 @@ static void *timer_thread_func(void *arg) {
 
 static void *core_thread_func(void *arg) {
   uint8_t core_id = *((uint8_t *)arg);
-  log_thread_context.proc_id = processor_state.processor_id;
-  log_thread_context.core_id = core_id;
-  log_thread_context.is_set = true;
+  log_thread_ctx.proc_id = proc_state.processor_id;
+  log_thread_ctx.core_id = core_id;
+  log_thread_ctx.is_set = true;
 
   while (!shutdown_requested) {
     scheduler_tick(core_id);
-    barrier_wait(&processor_state.core_completion_barrier);
-    barrier_wait(&processor_state.time_sync_barrier);
+    barrier_wait(&proc_state.core_completion_barrier);
+    barrier_wait(&proc_state.time_sync_barrier);
   }
   return NULL;
 }
@@ -82,9 +81,9 @@ static void *core_thread_func(void *arg) {
 void processor_cleanup(void) {
   LOG(LOG_LEVEL_INFO, "Cleaning up processor...");
   log_system_shutdown();
-  pthread_mutex_destroy(&processor_state.discard_queue_lock);
-  barrier_destroy(&processor_state.core_completion_barrier);
-  barrier_destroy(&processor_state.time_sync_barrier);
+  pthread_mutex_destroy(&proc_state.discard_queue_lock);
+  barrier_destroy(&proc_state.core_completion_barrier);
+  barrier_destroy(&proc_state.time_sync_barrier);
   ipc_cleanup();
 }
 
@@ -101,22 +100,21 @@ void processor_init(uint8_t proc_id) {
 
   LOG(LOG_LEVEL_INFO, "Initializing System for Processor %d...", proc_id);
 
-  processor_state.system_time = 0;
-  processor_state.processor_id = proc_id;
-  INIT_LIST_HEAD(&processor_state.discard_queue);
-  pthread_mutex_init(&processor_state.discard_queue_lock, NULL);
-  atomic_store(&processor_state.system_criticality_level, QM);
+  proc_state.system_time = 0;
+  proc_state.processor_id = proc_id;
+  INIT_LIST_HEAD(&proc_state.discard_queue);
+  pthread_mutex_init(&proc_state.discard_queue_lock, NULL);
+  atomic_store(&proc_state.system_criticality_level, QM);
 
   // Initialize barrier to wait for all cores + the timer thread.
-  barrier_init(&processor_state.core_completion_barrier, NUM_CORES_PER_PROC + 1,
-               0);
-  barrier_init(&processor_state.time_sync_barrier, NUM_CORES_PER_PROC + 1, 0);
+  barrier_init(&proc_state.core_completion_barrier, NUM_CORES_PER_PROC + 1, 0);
+  barrier_init(&proc_state.time_sync_barrier, NUM_CORES_PER_PROC + 1, 0);
 
-  INIT_LIST_HEAD(&processor_state.ready_job_offer_queue);
-  pthread_mutex_init(&processor_state.ready_job_offer_queue_lock, NULL);
+  INIT_LIST_HEAD(&proc_state.ready_job_offer_queue);
+  pthread_mutex_init(&proc_state.ready_job_offer_queue_lock, NULL);
 
-  INIT_LIST_HEAD(&processor_state.future_job_offer_queue);
-  pthread_mutex_init(&processor_state.future_job_offer_queue_lock, NULL);
+  INIT_LIST_HEAD(&proc_state.future_job_offer_queue);
+  pthread_mutex_init(&proc_state.future_job_offer_queue_lock, NULL);
 
   ipc_thread_init();
   scheduler_init();

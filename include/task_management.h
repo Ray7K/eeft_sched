@@ -15,9 +15,9 @@ typedef struct {
   uint32_t deadline;
   uint32_t wcet[MAX_CRITICALITY_LEVELS];
 
-  CriticalityLevel criticality_level;
+  criticality_level crit_level;
   uint8_t num_replicas;
-} Task;
+} task_struct;
 
 typedef enum {
   JOB_STATE_IDLE = 0,
@@ -25,11 +25,11 @@ typedef enum {
   JOB_STATE_RUNNING,
   JOB_STATE_COMPLETED,
   JOB_STATE_REMOVED,
-} JobState;
+} job_state;
 
-typedef struct Job {
+typedef struct job {
   void *next_free;
-  const Task *parent_task;
+  const task_struct *parent_task;
 
   uint32_t arrival_time;
   uint32_t relative_tuned_deadlines[MAX_CRITICALITY_LEVELS];
@@ -39,9 +39,9 @@ typedef struct Job {
   float acet;
   float executed_time;
 
-  uint16_t job_pool_id;
+  uint8_t job_pool_id;
   bool is_replica;
-  JobState state;
+  job_state state;
 
   struct list_head link;
 
@@ -50,11 +50,11 @@ typedef struct Job {
   _Atomic int refcount;
 
   _Atomic bool is_being_offered;
-} Job;
+} job_struct;
 
-void __release_job_to_pool(Job *job, uint16_t core_id);
+void __release_job_to_pool(job_struct *job, uint8_t core_id);
 
-static inline Job *get_job_ref(Job *job) {
+static inline job_struct *get_job_ref(job_struct *job) {
   if (job == NULL) {
     return NULL;
   }
@@ -62,7 +62,7 @@ static inline Job *get_job_ref(Job *job) {
   return job;
 }
 
-static inline void put_job_ref(Job *job, uint16_t core_id) {
+static inline void put_job_ref(job_struct *job, uint8_t core_id) {
   if (job == NULL) {
     return;
   }
@@ -74,14 +74,14 @@ static inline void put_job_ref(Job *job, uint16_t core_id) {
 
 void task_management_init(void);
 
-Job *create_job(const Task *parent_task, uint16_t core_id);
-Job *clone_job(const Job *job, uint16_t core_id);
-void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add);
-Job *peek_next_job(struct list_head *queue_head);
-Job *pop_next_job(struct list_head *queue_head);
+job_struct *create_job(const task_struct *parent_task, uint8_t core_id);
+job_struct *clone_job(const job_struct *job, uint8_t core_id);
+void add_to_queue_sorted(struct list_head *queue_head, job_struct *job_to_add);
+job_struct *peek_next_job(struct list_head *queue_head);
+job_struct *pop_next_job(struct list_head *queue_head);
 void remove_job_with_parent_task_id(struct list_head *queue_head,
-                                    uint32_t task_id, uint16_t core_id);
-void log_job_queue(LogLevel level, const char *name,
+                                    uint32_t task_id, uint8_t core_id);
+void log_job_queue(log_level level, const char *name,
                    struct list_head *queue_head);
 
 #endif

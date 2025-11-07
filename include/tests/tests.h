@@ -4,11 +4,11 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-typedef struct TestCase TestCase;
+typedef struct test_case test_case;
 
-typedef void (*test_func_t)(TestCase *test);
+typedef void (*test_func_t)(test_case *test);
 
-struct TestCase {
+struct test_case {
   const char *name;
   test_func_t func;
   test_func_t setup;
@@ -22,7 +22,7 @@ struct TestCase {
 
 #define REGISTER_TEST(test_name_str, test_func_ptr, setup_func_ptr,            \
                       teardown_func_ptr)                                       \
-  static TestCase __test_case##test_func_ptr __attribute__((                   \
+  static test_case __test_case##test_func_ptr __attribute__((                  \
       used, section("__DATA,test_cases"), no_sanitize("address"))) = {         \
       .name = (test_name_str),                                                 \
       .func = (test_func_ptr),                                                 \

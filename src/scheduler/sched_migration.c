@@ -47,7 +47,7 @@ void init_migration(void) {
   }
 }
 
-static inline bid_entry *create_bid_entry(uint16_t core_id) {
+static inline bid_entry *create_bid_entry(uint8_t core_id) {
   bid_entry *entry = NULL;
   if (!list_empty(&bid_entry_free_list[core_id])) {
     entry = list_first_entry(&bid_entry_free_list[core_id], bid_entry, link);
@@ -56,18 +56,18 @@ static inline bid_entry *create_bid_entry(uint16_t core_id) {
   return entry;
 }
 
-static inline void release_bid_entry(bid_entry *entry, uint16_t core_id) {
+static inline void release_bid_entry(bid_entry *entry, uint8_t core_id) {
   if (entry == NULL) {
     return;
   }
   list_add(&entry->link, &bid_entry_free_list[core_id]);
 }
 
-void remove_expired_bid_entries(uint16_t core_id) {
+void remove_expired_bid_entries(uint8_t core_id) {
   bid_entry *cur, *next;
   list_for_each_entry_safe(cur, next, &core_states[core_id].bid_history_queue,
                            link) {
-    if (cur->expiry_time <= processor_state.system_time) {
+    if (cur->expiry_time <= proc_state.system_time) {
       LOG(LOG_LEVEL_DEBUG, "Removing expired bid entry for job %d, Expiry: %d",
           cur->bidded_job->parent_task->id, cur->expiry_time);
       list_del(&cur->link);
@@ -79,8 +79,7 @@ void remove_expired_bid_entries(uint16_t core_id) {
   }
 }
 
-static inline void add_bid_entry_sorted(bid_entry *new_entry,
-                                        uint16_t core_id) {
+static inline void add_bid_entry_sorted(bid_entry *new_entry, uint8_t core_id) {
   if (new_entry == NULL) {
     LOG(LOG_LEVEL_ERROR, "Attempted to add NULL bid entry\n");
     return;
@@ -120,7 +119,7 @@ static inline void release_offer(Offer *offer) {
   pthread_mutex_unlock(&offer_free_list_lock);
 }
 
-static inline DelegatedJob *create_delegation(uint16_t core_id) {
+static inline DelegatedJob *create_delegation(uint8_t core_id) {
   if (list_empty(&delegated_jobs_free_list[core_id])) {
     return NULL;
   }
@@ -130,7 +129,7 @@ static inline DelegatedJob *create_delegation(uint16_t core_id) {
   return dj;
 }
 
-static inline void __release_delegation(DelegatedJob *dj, uint16_t core_id) {
+static inline void __release_delegation(DelegatedJob *dj, uint8_t core_id) {
   if (dj == NULL)
     return;
 
@@ -139,11 +138,11 @@ static inline void __release_delegation(DelegatedJob *dj, uint16_t core_id) {
   list_add(&dj->link, &delegated_jobs_free_list[core_id]);
 }
 
-void release_delegation(DelegatedJob *dj, uint16_t core_id) {
+void release_delegation(DelegatedJob *dj, uint8_t core_id) {
   __release_delegation(dj, core_id);
 }
 
-static inline void add_delegation_sorted(DelegatedJob *dj, uint16_t core_id) {
+static inline void add_delegation_sorted(DelegatedJob *dj, uint8_t core_id) {
   DelegatedJob *cursor, *n;
 
   list_for_each_entry_safe(cursor, n, &core_states[core_id].delegated_job_queue,
@@ -157,10 +156,10 @@ static inline void add_delegation_sorted(DelegatedJob *dj, uint16_t core_id) {
   list_add(&dj->link, &core_states[core_id].delegated_job_queue);
 }
 
-static inline void handle_light_donor_push(uint16_t core_id) {
+static inline void handle_light_donor_push(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
 
-  Job *job;
+  job_struct *job;
   uint32_t num_offers_sent = 0;
 
   list_for_each_entry_rev(job, &core_state->ready_queue, link) {
@@ -171,7 +170,7 @@ static inline void handle_light_donor_push(uint16_t core_id) {
     if (atomic_exchange(&job->is_being_offered, true))
       continue;
 
-    Job *cloned_job = clone_job(job, core_id);
+    job_struct *cloned_job = clone_job(job, core_id);
     if (cloned_job == NULL) {
       LOG(LOG_LEVEL_WARN, "Failed to clone job %d for migration, pool empty",
           job->parent_task->id);
@@ -180,7 +179,7 @@ static inline void handle_light_donor_push(uint16_t core_id) {
       continue;
     }
     cloned_job->virtual_deadline = cloned_job->actual_deadline;
-    cloned_job->arrival_time = processor_state.system_time + 2;
+    cloned_job->arrival_time = proc_state.system_time + 2;
 
     Offer *offer = create_offer();
     if (offer == NULL) {
@@ -196,14 +195,14 @@ static inline void handle_light_donor_push(uint16_t core_id) {
     offer->donor_core_id = core_id;
     offer->best_bidder_id = core_id;
     offer->best_bid_metric = get_util(core_id);
-    offer->expiry_time = processor_state.system_time + 2;
+    offer->expiry_time = proc_state.system_time + 2;
 
     LOG(LOG_LEVEL_INFO, "Offering job %d from ready queue",
         offer->j_copy->parent_task->id);
 
-    pthread_mutex_lock(&processor_state.ready_job_offer_queue_lock);
-    list_add(&offer->link, &processor_state.ready_job_offer_queue);
-    pthread_mutex_unlock(&processor_state.ready_job_offer_queue_lock);
+    pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
+    list_add(&offer->link, &proc_state.ready_job_offer_queue);
+    pthread_mutex_unlock(&proc_state.ready_job_offer_queue_lock);
 
     num_offers_sent++;
   }
@@ -215,7 +214,7 @@ static inline void handle_light_donor_push(uint16_t core_id) {
     if (atomic_exchange(&job->is_being_offered, true))
       continue;
 
-    Job *cloned_job = clone_job(job, core_id);
+    job_struct *cloned_job = clone_job(job, core_id);
     if (cloned_job == NULL) {
       LOG(LOG_LEVEL_WARN, "Failed to clone job %d for migration, pool empty",
           job->parent_task->id);
@@ -239,7 +238,7 @@ static inline void handle_light_donor_push(uint16_t core_id) {
     offer->donor_core_id = core_id;
     offer->best_bidder_id = core_id;
     offer->best_bid_metric = get_util(core_id);
-    offer->expiry_time = processor_state.system_time + 2;
+    offer->expiry_time = proc_state.system_time + 2;
 
     LOG(LOG_LEVEL_INFO, "Offering job %d from replica queue",
         offer->j_copy->parent_task->id);
@@ -248,20 +247,20 @@ static inline void handle_light_donor_push(uint16_t core_id) {
       core_state->next_dpm_eligible_tick = offer->expiry_time;
     }
 
-    pthread_mutex_lock(&processor_state.ready_job_offer_queue_lock);
-    list_add(&offer->link, &processor_state.ready_job_offer_queue);
-    pthread_mutex_unlock(&processor_state.ready_job_offer_queue_lock);
+    pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
+    list_add(&offer->link, &proc_state.ready_job_offer_queue);
+    pthread_mutex_unlock(&proc_state.ready_job_offer_queue_lock);
 
     num_offers_sent++;
   }
 }
 
-static inline void handle_idle_donor_push(uint16_t core_id) {
+static inline void handle_idle_donor_push(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
 
   uint8_t num_offers = 0;
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
-    const TaskAllocationMap *instance = &allocation_map[i];
+    const task_alloc_map *instance = &allocation_map[i];
 
     if (num_offers >= 2) {
       return;
@@ -269,17 +268,17 @@ static inline void handle_idle_donor_push(uint16_t core_id) {
 
     if (instance->proc_id == core_state->proc_id &&
         instance->core_id == core_state->core_id) {
-      const Task *task = find_task_by_id(instance->task_id);
+      const task_struct *task = find_task_by_id(instance->task_id);
 
       if (task == NULL) {
         continue;
       }
 
       uint32_t arrival_time =
-          ((processor_state.system_time / task->period) + 1) * task->period;
+          ((proc_state.system_time / task->period) + 1) * task->period;
 
       if (arrival_time >=
-          processor_state.system_time + DPM_MIGRATION_LOOKAHEAD_TICKS) {
+          proc_state.system_time + DPM_MIGRATION_LOOKAHEAD_TICKS) {
         continue;
       }
 
@@ -293,7 +292,7 @@ static inline void handle_idle_donor_push(uint16_t core_id) {
         }
       }
 
-      Job *new_job = create_job(task, core_id);
+      job_struct *new_job = create_job(task, core_id);
       if (new_job == NULL) {
         continue;
       }
@@ -331,7 +330,7 @@ static inline void handle_idle_donor_push(uint16_t core_id) {
       offer->donor_core_id = core_id;
       offer->best_bidder_id = core_id;
       offer->best_bid_metric = -1;
-      offer->expiry_time = processor_state.system_time + 2;
+      offer->expiry_time = proc_state.system_time + 2;
 
       LOG(LOG_LEVEL_INFO, "Offering future job %d arriving at %d",
           new_job->parent_task->id, new_job->arrival_time);
@@ -346,9 +345,9 @@ static inline void handle_idle_donor_push(uint16_t core_id) {
             core_state->next_dpm_eligible_tick + 1;
       }
 
-      pthread_mutex_lock(&processor_state.future_job_offer_queue_lock);
-      list_add(&offer->link, &processor_state.future_job_offer_queue);
-      pthread_mutex_unlock(&processor_state.future_job_offer_queue_lock);
+      pthread_mutex_lock(&proc_state.future_job_offer_queue_lock);
+      list_add(&offer->link, &proc_state.future_job_offer_queue);
+      pthread_mutex_unlock(&proc_state.future_job_offer_queue_lock);
       num_offers++;
     }
   skip:
@@ -358,15 +357,15 @@ static inline void handle_idle_donor_push(uint16_t core_id) {
 
 #define LIGHT_DONOR_UTIL_THRESHOLD 0.3f
 
-void attempt_migration_push(uint16_t core_id) {
+void attempt_migration_push(uint8_t core_id) {
 
   CoreState *core_state = &core_states[core_id];
   float util = get_util(core_id);
 
   if (core_state->is_idle &&
-      processor_state.system_time > core_state->next_dpm_eligible_tick) {
+      proc_state.system_time > core_state->next_dpm_eligible_tick) {
     handle_idle_donor_push(core_id);
-  } else if (processor_state.system_time >=
+  } else if (proc_state.system_time >=
                  core_state->next_migration_allowed_tick &&
              util < LIGHT_DONOR_UTIL_THRESHOLD) {
     handle_light_donor_push(core_id);
@@ -375,20 +374,19 @@ void attempt_migration_push(uint16_t core_id) {
 
 #define UTIL_UPPER_CAP 0.85f
 
-void participate_in_auctions(uint16_t core_id) {
+void participate_in_auctions(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
 
   if (core_state->is_idle) {
     return;
   }
 
-  pthread_mutex_lock(&processor_state.ready_job_offer_queue_lock);
+  pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
   Offer *cur, *next;
-  list_for_each_entry_safe(cur, next, &processor_state.ready_job_offer_queue,
-                           link) {
-    if (cur->expiry_time > processor_state.system_time &&
+  list_for_each_entry_safe(cur, next, &proc_state.ready_job_offer_queue, link) {
+    if (cur->expiry_time > proc_state.system_time &&
         cur->donor_core_id != core_id) {
-      Job *candidate = cur->j_copy;
+      job_struct *candidate = cur->j_copy;
       LOG(LOG_LEVEL_INFO, "Evaluating job offer for Job %d",
           candidate->parent_task->id);
       if (is_admissible(core_id, candidate)) {
@@ -406,7 +404,7 @@ void participate_in_auctions(uint16_t core_id) {
           cur->best_bid_metric = util;
           cur->best_bidder_id = core_id;
           new_bid_entry->bidded_job = get_job_ref(candidate);
-          new_bid_entry->bid_time = processor_state.system_time;
+          new_bid_entry->bid_time = proc_state.system_time;
           new_bid_entry->expiry_time = cur->expiry_time;
 
           add_bid_entry_sorted(new_bid_entry, core_id);
@@ -414,16 +412,16 @@ void participate_in_auctions(uint16_t core_id) {
       }
     }
   }
-  pthread_mutex_unlock(&processor_state.ready_job_offer_queue_lock);
+  pthread_mutex_unlock(&proc_state.ready_job_offer_queue_lock);
 
-  pthread_mutex_lock(&processor_state.future_job_offer_queue_lock);
-  list_for_each_entry_safe(cur, next, &processor_state.future_job_offer_queue,
+  pthread_mutex_lock(&proc_state.future_job_offer_queue_lock);
+  list_for_each_entry_safe(cur, next, &proc_state.future_job_offer_queue,
                            link) {
     LOG(LOG_LEVEL_DEBUG, "Evaluating future job offer for Job %d",
         cur->j_copy->parent_task->id);
-    if (cur->expiry_time > processor_state.system_time &&
+    if (cur->expiry_time > proc_state.system_time &&
         cur->donor_core_id != core_id) {
-      Job *candidate = cur->j_copy;
+      job_struct *candidate = cur->j_copy;
       if (is_admissible(core_id, candidate)) {
         float util = get_util(core_id);
         LOG(LOG_LEVEL_INFO,
@@ -438,7 +436,7 @@ void participate_in_auctions(uint16_t core_id) {
           cur->best_bid_metric = util;
           cur->best_bidder_id = core_id;
           new_bid_entry->bidded_job = get_job_ref(candidate);
-          new_bid_entry->bid_time = processor_state.system_time;
+          new_bid_entry->bid_time = proc_state.system_time;
           new_bid_entry->expiry_time = cur->expiry_time;
 
           add_bid_entry_sorted(new_bid_entry, core_id);
@@ -446,17 +444,16 @@ void participate_in_auctions(uint16_t core_id) {
       }
     }
   }
-  pthread_mutex_unlock(&processor_state.future_job_offer_queue_lock);
+  pthread_mutex_unlock(&proc_state.future_job_offer_queue_lock);
 }
 
-void handle_offer_cleanup(uint16_t core_id) {
+void handle_offer_cleanup(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
 
   Offer *cur, *next;
-  pthread_mutex_lock(&processor_state.ready_job_offer_queue_lock);
-  list_for_each_entry_safe(cur, next, &processor_state.ready_job_offer_queue,
-                           link) {
-    if (cur->expiry_time <= processor_state.system_time &&
+  pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
+  list_for_each_entry_safe(cur, next, &proc_state.ready_job_offer_queue, link) {
+    if (cur->expiry_time <= proc_state.system_time &&
         cur->donor_core_id == core_id) {
 
       atomic_store_explicit(&cur->j_orig->is_being_offered, false,
@@ -490,11 +487,11 @@ void handle_offer_cleanup(uint16_t core_id) {
                       core_id); // release: ready/replica queue owned ref
         }
 
-        Job *awarded_job = get_job_ref(cur->j_orig);
+        job_struct *awarded_job = get_job_ref(cur->j_orig);
         awarded_job->virtual_deadline = awarded_job->actual_deadline;
 
         core_state->next_migration_allowed_tick =
-            processor_state.system_time + MIGRATION_COOLDOWN_TICKS;
+            proc_state.system_time + MIGRATION_COOLDOWN_TICKS;
 
         ring_buffer_enqueue(
             &core_states[cur->best_bidder_id].award_notification_queue,
@@ -506,12 +503,12 @@ void handle_offer_cleanup(uint16_t core_id) {
       release_offer(cur);
     }
   }
-  pthread_mutex_unlock(&processor_state.ready_job_offer_queue_lock);
+  pthread_mutex_unlock(&proc_state.ready_job_offer_queue_lock);
 
-  pthread_mutex_lock(&processor_state.future_job_offer_queue_lock);
-  list_for_each_entry_safe(cur, next, &processor_state.future_job_offer_queue,
+  pthread_mutex_lock(&proc_state.future_job_offer_queue_lock);
+  list_for_each_entry_safe(cur, next, &proc_state.future_job_offer_queue,
                            link) {
-    if (cur->expiry_time <= processor_state.system_time &&
+    if (cur->expiry_time <= proc_state.system_time &&
         cur->donor_core_id == core_id) {
 
       atomic_store_explicit(&cur->j_orig->is_being_offered, false,
@@ -528,11 +525,12 @@ void handle_offer_cleanup(uint16_t core_id) {
             cur->j_copy->parent_task->id, cur->j_copy->arrival_time,
             cur->best_bidder_id % NUM_CORES_PER_PROC);
 
-        Job *awarded_job = get_job_ref(cur->j_orig); // get: awardee owned ref
+        job_struct *awarded_job =
+            get_job_ref(cur->j_orig); // get: awardee owned ref
         awarded_job->virtual_deadline = awarded_job->actual_deadline;
 
         core_state->next_migration_allowed_tick =
-            processor_state.system_time + MIGRATION_COOLDOWN_TICKS;
+            proc_state.system_time + MIGRATION_COOLDOWN_TICKS;
 
         DelegatedJob *dj = create_delegation(core_id);
         if (!dj) {
@@ -555,26 +553,26 @@ void handle_offer_cleanup(uint16_t core_id) {
       release_offer(cur);
     }
   }
-  pthread_mutex_unlock(&processor_state.future_job_offer_queue_lock);
+  pthread_mutex_unlock(&proc_state.future_job_offer_queue_lock);
 }
 
-void process_award_notifications(uint16_t core_id) {
+void process_award_notifications(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
 
-  Job *awarded_job;
+  job_struct *awarded_job;
   while (ring_buffer_try_dequeue(&core_state->award_notification_queue,
                                  &awarded_job) == 0) {
     LOG(LOG_LEVEL_INFO, "Received award notification for Job %d",
         awarded_job->parent_task->id);
 
-    if (awarded_job->arrival_time > processor_state.system_time) {
+    if (awarded_job->arrival_time > proc_state.system_time) {
       LOG(LOG_LEVEL_INFO, "Awarded Job %d is a future job arriving at %d",
           awarded_job->parent_task->id, awarded_job->arrival_time);
 
       add_to_queue_sorted(&core_state->pending_jobs_queue, awarded_job);
     } else {
       core_state->decision_point = true;
-      if (awarded_job->parent_task->criticality_level <
+      if (awarded_job->parent_task->crit_level <
           core_state->local_criticality_level) {
         add_to_queue_sorted(&core_state->discard_list, awarded_job);
       } else {

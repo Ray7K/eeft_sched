@@ -12,19 +12,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const DVFSLevel dvfs_levels[NUM_DVFS_LEVELS] = {
-    {2000, 1000, 1.0f}, {1800, 900, 0.9f}, {1500, 750, 0.75f},
-    {1200, 600, 0.6f},  {1000, 500, 0.5f}, {800, 300, 0.3f}};
+const dvfs_level dvfs_levels[NUM_DVFS_LEVELS] = {
+    {2000, 1000, 1.00f}, // 2.0 GHz @ 1.0 V
+    {1800, 950, 0.90f},  // 1.8 GHz @ 0.95 V
+    {1500, 900, 0.75f},  // 1.5 GHz @ 0.90 V
+    {1200, 850, 0.60f},  // 1.2 GHz @ 0.85 V
+    {1000, 800, 0.50f},  // 1.0 GHz @ 0.80 V
+    {800, 760, 0.40f}    // 0.8 GHz @ 0.76 V
+};
 
 void power_management_init(void) {
   LOG(LOG_LEVEL_INFO, "Power Management Initialized.");
 }
 
-float power_get_current_scaling_factor(uint16_t core_id) {
+float power_get_current_scaling_factor(uint8_t core_id) {
   return dvfs_levels[core_states[core_id].current_dvfs_level].scaling_factor;
 }
 
-uint8_t calc_required_dvfs_level(uint16_t core_id) {
+uint8_t calc_required_dvfs_level(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
   if (core_state->is_idle || core_state->running_job == NULL) {
     return NUM_DVFS_LEVELS - 1;
@@ -42,14 +47,13 @@ uint8_t calc_required_dvfs_level(uint16_t core_id) {
         core_state->running_job->relative_tuned_deadlines[crit_lvl];
 
     float running_job_slack =
-        (float)(virtual_deadline - processor_state.system_time) -
-        remaining_wcet;
+        (float)(virtual_deadline - proc_state.system_time) - remaining_wcet;
 
     min_slack = running_job_slack < min_slack ? running_job_slack : min_slack;
 
-    Job *cur;
+    job_struct *cur;
 
-    uint32_t tstart = processor_state.system_time;
+    uint32_t tstart = proc_state.system_time;
     list_for_each_entry(cur, &core_state->ready_queue, link) {
       uint32_t tend =
           cur->arrival_time + cur->relative_tuned_deadlines[crit_lvl];
@@ -107,7 +111,7 @@ uint8_t calc_required_dvfs_level(uint16_t core_id) {
   return dvfs_level;
 }
 
-void power_set_dvfs_level(uint16_t core_id, uint8_t level_idx) {
+void power_set_dvfs_level(uint8_t core_id, uint8_t level_idx) {
   if (level_idx < NUM_DVFS_LEVELS) {
     core_states[core_id].current_dvfs_level = level_idx;
     LOG(LOG_LEVEL_DEBUG, "DVFS level set to %u (Freq: %uMHz, Scale: %.2f)",
@@ -116,14 +120,14 @@ void power_set_dvfs_level(uint16_t core_id, uint8_t level_idx) {
   }
 }
 
-uint8_t power_get_current_dvfs_level(uint16_t core_id) {
+uint8_t power_get_current_dvfs_level(uint8_t core_id) {
   return core_states[core_id].current_dvfs_level;
 }
 
-void power_management_set_dpm_interval(uint16_t core_id,
+void power_management_set_dpm_interval(uint8_t core_id,
                                        uint32_t next_arrival_time) {
   CoreState *core_state = &core_states[core_id];
-  uint32_t now = processor_state.system_time;
+  uint32_t now = proc_state.system_time;
 
   if (!core_state->is_idle)
     return;

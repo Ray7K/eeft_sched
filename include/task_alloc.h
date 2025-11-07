@@ -13,12 +13,12 @@ typedef struct {
   uint8_t proc_id;
   uint8_t core_id;
   uint32_t tuned_deadlines[MAX_CRITICALITY_LEVELS];
-} TaskAllocationMap;
+} task_alloc_map;
 
-extern const Task system_tasks[];
+extern const task_struct system_tasks[];
 extern const uint32_t SYSTEM_TASKS_SIZE;
 
-extern const TaskAllocationMap allocation_map[];
+extern const task_alloc_map allocation_map[];
 extern const uint32_t ALLOCATION_MAP_SIZE;
 
 #endif

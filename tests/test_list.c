@@ -7,7 +7,7 @@ struct my_node {
   struct list_head list;
 };
 
-static void test_list_init_empty(TestCase *test) {
+static void test_list_init_empty(test_case *test) {
   LIST_HEAD(head);
   EXPECT(test, list_empty(&head));
   EXPECT(test, head.next == &head);
@@ -19,7 +19,7 @@ static void test_list_init_empty(TestCase *test) {
   EXPECT(test, head.prev == &head);
 }
 
-static void test_list_add_and_first(TestCase *test) {
+static void test_list_add_and_first(test_case *test) {
   LIST_HEAD(head);
   struct my_node *first = list_first_entry(&head, struct my_node, list);
   ASSERT(test, first == NULL);
@@ -49,7 +49,7 @@ static void test_list_add_and_first(TestCase *test) {
 }
 
 // Test case for deleting an element from the list
-static void test_list_del(TestCase *test) {
+static void test_list_del(test_case *test) {
   LIST_HEAD(head);
   struct my_node node1;
   node1.data = 1;
@@ -62,7 +62,7 @@ static void test_list_del(TestCase *test) {
   EXPECT(test, node1.list.prev == NULL);
 }
 
-static void test_list_iteration(TestCase *test) {
+static void test_list_iteration(test_case *test) {
   LIST_HEAD(head);
   struct my_node nodes[5];
   for (int i = 0; i < 5; i++) {
@@ -79,7 +79,7 @@ static void test_list_iteration(TestCase *test) {
   ASSERT(test, expected_data == -1);
 }
 
-static void test_list_iteration_safe(TestCase *test) {
+static void test_list_iteration_safe(test_case *test) {
   LIST_HEAD(head);
   struct my_node nodes[5];
   for (int i = 0; i < 5; i++) {
@@ -97,7 +97,7 @@ static void test_list_iteration_safe(TestCase *test) {
   ASSERT(test, list_empty(&head));
 }
 
-static void test_list_splice(TestCase *test) {
+static void test_list_splice(test_case *test) {
   LIST_HEAD(list1);
   struct my_node nodes1[3];
   for (int i = 0; i < 3; i++) {

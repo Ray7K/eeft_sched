@@ -12,7 +12,7 @@
 #include <time.h>
 #include <unistd.h>
 
-LogLevel current_log_level = LOG_LEVEL_DEBUG;
+log_level current_log_level = LOG_LEVEL_DEBUG;
 
 static volatile sig_atomic_t shutdown_requested = 0;
 

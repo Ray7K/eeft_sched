@@ -25,7 +25,7 @@ static _Atomic uint64_t log_seq[LOG_QUEUE_SIZE];
 
 _Atomic int log_wakeup_pending;
 
-LogLevel __attribute__((weak)) current_log_level = LOG_LEVEL_INFO;
+log_level __attribute__((weak)) current_log_level = LOG_LEVEL_INFO;
 
 static void *logger_thread_func(void *arg) {
   (void)arg;

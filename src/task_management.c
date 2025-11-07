@@ -11,7 +11,7 @@
 #define JOBS_PER_CORE 200
 
 typedef struct {
-  Job job_pool[JOBS_PER_CORE];
+  job_struct job_pool[JOBS_PER_CORE];
   void *free_list;
   void *remote_free_list;
   pthread_mutex_t remote_lock;
@@ -32,7 +32,7 @@ void task_management_init(void) {
   }
 }
 
-Job *create_job(const Task *parent_task, uint16_t core_id) {
+job_struct *create_job(const task_struct *parent_task, uint8_t core_id) {
   if (core_pools[core_id].free_list == NULL) {
     pthread_mutex_lock(&core_pools[core_id].remote_lock);
 
@@ -42,7 +42,7 @@ Job *create_job(const Task *parent_task, uint16_t core_id) {
     pthread_mutex_unlock(&core_pools[core_id].remote_lock);
   }
 
-  Job *new_job = (Job *)core_pools[core_id].free_list;
+  job_struct *new_job = (job_struct *)core_pools[core_id].free_list;
 
   if (new_job != NULL) {
     core_pools[core_id].free_list = new_job->next_free;
@@ -59,12 +59,12 @@ Job *create_job(const Task *parent_task, uint16_t core_id) {
   return new_job;
 }
 
-Job *clone_job(const Job *job, uint16_t core_id) {
+job_struct *clone_job(const job_struct *job, uint8_t core_id) {
   if (job == NULL) {
     return NULL;
   }
 
-  Job *new_job = create_job(job->parent_task, core_id);
+  job_struct *new_job = create_job(job->parent_task, core_id);
   if (new_job == NULL) {
     return NULL;
   }
@@ -84,12 +84,12 @@ Job *clone_job(const Job *job, uint16_t core_id) {
   return new_job;
 }
 
-void __release_job_to_pool(Job *job, uint16_t core_id) {
+void __release_job_to_pool(job_struct *job, uint8_t core_id) {
   if (job == NULL) {
     return;
   }
-  uint16_t owner = job->job_pool_id;
-  uint16_t me = core_id;
+  uint8_t owner = job->job_pool_id;
+  uint8_t me = core_id;
 
   if (owner == me) {
     job->next_free = core_pools[owner].free_list;
@@ -102,12 +102,12 @@ void __release_job_to_pool(Job *job, uint16_t core_id) {
   }
 }
 
-void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add) {
+void add_to_queue_sorted(struct list_head *queue_head, job_struct *job_to_add) {
   if (queue_head == NULL || job_to_add == NULL) {
     LOG(LOG_LEVEL_ERROR, "Attempted to add job to a NULL queue\n");
     return;
   }
-  Job *cursor, *n;
+  job_struct *cursor, *n;
 
   list_for_each_entry_safe(cursor, n, queue_head, link) {
     if (job_to_add->virtual_deadline < cursor->virtual_deadline) {
@@ -119,12 +119,12 @@ void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add) {
   list_add(&job_to_add->link, queue_head->prev);
 }
 
-Job *peek_next_job(struct list_head *queue_head) {
-  return list_first_entry(queue_head, Job, link);
+job_struct *peek_next_job(struct list_head *queue_head) {
+  return list_first_entry(queue_head, job_struct, link);
 }
 
-Job *pop_next_job(struct list_head *queue_head) {
-  Job *job = list_first_entry(queue_head, Job, link);
+job_struct *pop_next_job(struct list_head *queue_head) {
+  job_struct *job = list_first_entry(queue_head, job_struct, link);
   if (job) {
     list_del(&job->link);
   }
@@ -132,8 +132,8 @@ Job *pop_next_job(struct list_head *queue_head) {
 }
 
 void remove_job_with_parent_task_id(struct list_head *queue_head,
-                                    uint32_t task_id, uint16_t core_id) {
-  Job *cursor, *next;
+                                    uint32_t task_id, uint8_t core_id) {
+  job_struct *cursor, *next;
 
   list_for_each_entry_safe(cursor, next, queue_head, link) {
     if (cursor->parent_task->id == task_id) {
@@ -143,12 +143,12 @@ void remove_job_with_parent_task_id(struct list_head *queue_head,
   }
 }
 
-static void job_to_str(Job *job, char *buffer, size_t size) {
+static void job_to_str(job_struct *job, char *buffer, size_t size) {
   snprintf(buffer, size, "Job(ID:%u VDL:%u REM:%.2f)", job->parent_task->id,
            job->virtual_deadline, job->acet - job->executed_time);
 }
 
-void log_job_queue(LogLevel level, const char *name,
+void log_job_queue(log_level level, const char *name,
                    struct list_head *queue_head) {
   if (level < current_log_level) {
     return;
@@ -162,7 +162,7 @@ void log_job_queue(LogLevel level, const char *name,
              sizeof(queue_str) - strlen(queue_str), "%s", "(Empty)");
   }
 
-  Job *job;
+  job_struct *job;
   list_for_each_entry(job, queue_head, link) {
     char job_info[64];
     job_to_str(job, job_info, sizeof(job_info));

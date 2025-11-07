@@ -9,15 +9,15 @@
 // This is a private macro in task_management.c, redefined here for testing.
 #define JOBS_PER_CORE 100
 
-static void setup(TestCase *test) {
+static void setup(test_case *test) {
   (void)test;
   task_management_init();
 }
 
-static void test_job_clone(TestCase *test) {
-  const Task *parent_task = &system_tasks[0];
+static void test_job_clone(test_case *test) {
+  const task_struct *parent_task = &system_tasks[0];
 
-  Job *job = create_job(parent_task, 0);
+  job_struct *job = create_job(parent_task, 0);
 
   job->arrival_time = 10;
   job->actual_deadline = 50;
@@ -27,7 +27,7 @@ static void test_job_clone(TestCase *test) {
   job->executed_time = 1.0f;
   job->state = JOB_STATE_READY;
 
-  Job *cloned_job = clone_job(job, 0);
+  job_struct *cloned_job = clone_job(job, 0);
   ASSERT(test, cloned_job != NULL);
   ASSERT(test, cloned_job != job);
   ASSERT(test, cloned_job->parent_task == job->parent_task);
@@ -58,10 +58,10 @@ REGISTER_TEST("Job clone test", test_job_clone, setup, NULL);
 #define ITERATIONS_PER_THREAD 5000
 
 typedef struct {
-  TestCase *test;
-  uint16_t core_id;
+  test_case *test;
+  uint8_t core_id;
   int iterations;
-  const Task *parent_task;
+  const task_struct *parent_task;
 } test_thread_data_t;
 
 // Each thread operates on its own unique core_id
@@ -69,7 +69,7 @@ static void *one_to_one_worker(void *arg) {
   test_thread_data_t *data = (test_thread_data_t *)arg;
 
   for (int i = 0; i < data->iterations; i++) {
-    Job *job = create_job(data->parent_task, data->core_id);
+    job_struct *job = create_job(data->parent_task, data->core_id);
     if (job) {
       put_job_ref(job, data->core_id); // Release to own pool
     }
@@ -77,7 +77,7 @@ static void *one_to_one_worker(void *arg) {
   return NULL;
 }
 
-static void test_job_pool_one_to_one(TestCase *test) {
+static void test_job_pool_one_to_one(test_case *test) {
   ASSERT(test, NUM_THREADS_ONE_TO_ONE <= NUM_CORES_PER_PROC);
 
   pthread_t threads[NUM_THREADS_ONE_TO_ONE];
@@ -100,7 +100,7 @@ static void test_job_pool_one_to_one(TestCase *test) {
 
   // Verification: Check that each pool is full and not corrupted.
   for (int i = 0; i < NUM_THREADS_ONE_TO_ONE; i++) {
-    Job *jobs[JOBS_PER_CORE];
+    job_struct *jobs[JOBS_PER_CORE];
     int allocated_count = 0;
     for (int j = 0; j < JOBS_PER_CORE; j++) {
       jobs[j] = create_job(&system_tasks[0], i);

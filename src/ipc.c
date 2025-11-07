@@ -109,10 +109,10 @@ void ipc_thread_init(void) {
     exit(EXIT_FAILURE);
   }
 
-  ring_buffer_init(&processor_state.incoming_completion_msg_queue,
+  ring_buffer_init(&proc_state.incoming_completion_msg_queue,
                    MESSAGE_QUEUE_SIZE, g_incoming_buf, g_incoming_seq,
                    sizeof(completion_message));
-  ring_buffer_init(&processor_state.outgoing_completion_msg_queue,
+  ring_buffer_init(&proc_state.outgoing_completion_msg_queue,
                    MESSAGE_QUEUE_SIZE, g_outgoing_buf, g_outgoing_seq,
                    sizeof(completion_message));
 
@@ -149,13 +149,12 @@ void ipc_receive_completion_messages(void) {
       criticality_change_message msg;
       memcpy(&msg, payload, sizeof(criticality_change_message));
 
-      if (msg.new_level >
-              atomic_load(&processor_state.system_criticality_level) &&
+      if (msg.new_level > atomic_load(&proc_state.system_criticality_level) &&
           msg.new_level < MAX_CRITICALITY_LEVELS) {
         LOG(LOG_LEVEL_WARN,
             "Received criticality change to level %d from %s:%d", msg.new_level,
             inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port));
-        atomic_store(&processor_state.system_criticality_level, msg.new_level);
+        atomic_store(&proc_state.system_criticality_level, msg.new_level);
       }
     } else if (pkt_type == PACKET_TYPE_COMPLETION) {
       size_t num_msgs = payload_len / sizeof(completion_message);
@@ -169,8 +168,7 @@ void ipc_receive_completion_messages(void) {
             "Received completion message for task ID %d from %s:%d",
             msg.completed_task_id, inet_ntoa(sender_addr.sin_addr),
             ntohs(sender_addr.sin_port));
-        ring_buffer_enqueue(&processor_state.incoming_completion_msg_queue,
-                            &msg);
+        ring_buffer_enqueue(&proc_state.incoming_completion_msg_queue, &msg);
       }
     } else {
       LOG(LOG_LEVEL_WARN, "Received unknown packet type %d from %s:%d",
@@ -181,7 +179,7 @@ void ipc_receive_completion_messages(void) {
   }
 }
 
-void ipc_broadcast_criticality_change(CriticalityLevel new_level) {
+void ipc_broadcast_criticality_change(criticality_level new_level) {
   LOG(LOG_LEVEL_WARN, "Broadcasting criticality change to level %d", new_level);
   char packet[1 + sizeof(criticality_change_message)];
   packet[0] = PACKET_TYPE_CRITICALITY_CHANGE;
@@ -202,7 +200,7 @@ void ipc_send_completion_messages(void) {
 
   while (num_msgs < MESSAGE_QUEUE_SIZE) {
     completion_message msg;
-    if (ring_buffer_try_dequeue(&processor_state.outgoing_completion_msg_queue,
+    if (ring_buffer_try_dequeue(&proc_state.outgoing_completion_msg_queue,
                                 &msg) == 0) {
       memcpy(packet_buf + 1 + (num_msgs * sizeof(completion_message)), &msg,
              sizeof(completion_message));

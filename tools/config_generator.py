@@ -450,7 +450,7 @@ def generate_sys_config_h(sys_config):
         "// Task Properties",
         "typedef enum {",
         enum_members_str,
-        "} CriticalityLevel;\n",
+        "} criticality_level;\n",
         "#endif",
     ]
 
@@ -508,16 +508,16 @@ def generate_task_config_c(allocator: Allocator):
 // DO NOT EDIT BY HAND
 
 // Definitions for the system's static task set.
-const Task system_tasks[] = {{
+const task_struct system_tasks[] = {{
 {task_definitions_str}
 }};
-const uint32_t SYSTEM_TASKS_SIZE = sizeof(system_tasks) / sizeof(Task);
+const uint32_t SYSTEM_TASKS_SIZE = sizeof(system_tasks) / sizeof(task);
 
 // Definitions for the offline-calculated task allocation map.
-const TaskAllocationMap allocation_map[] = {{
+const task_allocation_map allocation_map[] = {{
 {map_entries_str}
 }};
-const uint32_t ALLOCATION_MAP_SIZE = sizeof(allocation_map) / sizeof(TaskAllocationMap);
+const uint32_t ALLOCATION_MAP_SIZE = sizeof(allocation_map) / sizeof(task_allocation_map);
 """
     with open(OUTPUT_C_TASK_ALLOC_PATH, "w") as f:
         f.write(c_content)

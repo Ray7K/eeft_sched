@@ -18,7 +18,7 @@ typedef struct {
 } test_rb_context_t;
 
 // Setup function to initialize the ring buffer before each test
-static void setup_ring_buffer(TestCase *test) {
+static void setup_ring_buffer(test_case *test) {
   test_rb_context_t *ctx = malloc(sizeof(test_rb_context_t));
   ASSERT(test, ctx != NULL);
 
@@ -35,7 +35,7 @@ static void setup_ring_buffer(TestCase *test) {
 }
 
 // Teardown function to free memory after each test
-static void teardown_ring_buffer(TestCase *test) {
+static void teardown_ring_buffer(test_case *test) {
   if (test->priv) {
     test_rb_context_t *ctx = test->priv;
     free(ctx->buffer);
@@ -46,7 +46,7 @@ static void teardown_ring_buffer(TestCase *test) {
 
 // --- Single-Threaded Tests ---
 
-static void test_rb_init_state(TestCase *test) {
+static void test_rb_init_state(test_case *test) {
   test_rb_context_t *ctx = test->priv;
   EXPECT(test, atomic_load(&ctx->rb.head) == 0);
   EXPECT(test, atomic_load(&ctx->rb.tail) == 0);
@@ -56,7 +56,7 @@ static void test_rb_init_state(TestCase *test) {
   }
 }
 
-static void test_rb_single_enqueue_dequeue(TestCase *test) {
+static void test_rb_single_enqueue_dequeue(test_case *test) {
   test_rb_context_t *ctx = test->priv;
   uint64_t in_val = 12345;
   uint64_t out_val = 0;
@@ -69,14 +69,14 @@ static void test_rb_single_enqueue_dequeue(TestCase *test) {
   EXPECT(test, out_val == in_val);
 }
 
-static void test_rb_empty_dequeue_fails(TestCase *test) {
+static void test_rb_empty_dequeue_fails(test_case *test) {
   test_rb_context_t *ctx = test->priv;
   uint64_t out_val = 0;
   int deq_ret = ring_buffer_try_dequeue(&ctx->rb, &out_val);
   EXPECT(test, deq_ret == -1);
 }
 
-static void test_rb_fill_and_empty(TestCase *test) {
+static void test_rb_fill_and_empty(test_case *test) {
   test_rb_context_t *ctx = test->priv;
 
   // Fill the buffer
@@ -103,7 +103,7 @@ static void test_rb_fill_and_empty(TestCase *test) {
   EXPECT(test, empty_ret == -1);
 }
 
-static void test_rb_wrap_around(TestCase *test) {
+static void test_rb_wrap_around(test_case *test) {
   test_rb_context_t *ctx = test->priv;
 
   // Enqueue and dequeue more than BUFFER_SIZE items to test wrap-around
@@ -170,7 +170,7 @@ static void *consumer_func(void *arg) {
   return NULL;
 }
 
-static void test_rb_mpmc_stress(TestCase *test) {
+static void test_rb_mpmc_stress(test_case *test) {
   test_rb_context_t *ctx = test->priv;
   pthread_t producers[STRESS_NUM_PRODUCERS];
   pthread_t consumers[STRESS_NUM_CONSUMERS];

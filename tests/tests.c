@@ -32,16 +32,16 @@ static void run_tests(const char *filter) {
   printf(COLOR_CYAN "--- Starting Test Run --- \n\n" COLOR_RESET);
 
   size_t size;
-  TestCase *tests = (TestCase *)getsectiondata(&_mh_execute_header, "__DATA",
-                                               "test_cases", &size);
+  test_case *tests = (test_case *)getsectiondata(&_mh_execute_header, "__DATA",
+                                                 "test_cases", &size);
   if (tests == NULL) {
     printf("No test cases found.\n");
     return;
   }
-  size_t num_tests = size / sizeof(TestCase);
+  size_t num_tests = size / sizeof(test_case);
 
   for (size_t i = 0; i < num_tests; i += 1) {
-    TestCase *t = &tests[i];
+    test_case *t = &tests[i];
 
     if (filter && strstr(t->name, filter) == NULL) {
       printf(COLOR_YELLOW "  Skipping test: %s (filtered)\n\n" COLOR_RESET,
