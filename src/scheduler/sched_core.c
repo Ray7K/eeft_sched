@@ -1,10 +1,10 @@
-#include "scheduler/sched_core.h"
-#include "scheduler/sched_migration.h"
-#include "scheduler/sched_util.h"
-
 #include "lib/list.h"
 #include "lib/log.h"
 #include "lib/ring_buffer.h"
+
+#include "scheduler/sched_core.h"
+#include "scheduler/sched_migration.h"
+#include "scheduler/sched_util.h"
 
 #include "ipc.h"
 #include "power_management.h"
@@ -130,7 +130,9 @@ static void handle_mode_change(uint16_t core_id,
             current_job->parent_task->wcet[core_state->local_criticality_level];
 
     if (current_job->parent_task->criticality_level <
-        core_state->local_criticality_level) {
+            core_state->local_criticality_level &&
+        !atomic_load_explicit(&current_job->is_being_offered,
+                              memory_order_acquire)) {
       add_to_queue_sorted(&core_state->discard_list, current_job);
     } else {
       add_to_queue_sorted(&new_ready_queue, current_job);
@@ -148,7 +150,9 @@ static void handle_mode_change(uint16_t core_id,
             current_job->parent_task->wcet[core_state->local_criticality_level];
 
     if (current_job->parent_task->criticality_level <
-        core_state->local_criticality_level) {
+            core_state->local_criticality_level &&
+        !atomic_load_explicit(&current_job->is_being_offered,
+                              memory_order_acquire)) {
       add_to_queue_sorted(&core_state->discard_list, current_job);
     } else {
       add_to_queue_sorted(&new_replica_queue, current_job);
@@ -162,8 +166,9 @@ static void handle_mode_change(uint16_t core_id,
 static void handle_job_arrivals(uint16_t core_id) {
   CoreState *core_state = &core_states[core_id];
 
-  Job *new_job;
-  list_for_each_entry(new_job, &core_state->pending_jobs_queue, link) {
+  Job *new_job, *next;
+  list_for_each_entry_safe(new_job, next, &core_state->pending_jobs_queue,
+                           link) {
     if (new_job->arrival_time > processor_state.system_time) {
       continue;
     }
@@ -206,6 +211,32 @@ static void handle_job_arrivals(uint16_t core_id) {
       if (processor_state.system_time % task->period != 0) {
         continue;
       }
+
+      uint32_t arrival_time = processor_state.system_time;
+
+      /* --- Delegation check --- */
+      DelegatedJob *dj, *tmp;
+      bool delegated = false;
+      list_for_each_entry_safe(dj, tmp, &core_state->delegated_job_queue,
+                               link) {
+        if (dj->arrival_tick < processor_state.system_time) {
+          list_del(&dj->link);
+          release_delegation(dj, core_id);
+          continue;
+        }
+        if (dj->task_id == task->id &&
+            dj->arrival_tick >= processor_state.system_time) {
+          LOG(LOG_LEVEL_DEBUG,
+              "Skipping delegated arrival for Task %u (delegated until tick "
+              "%u)",
+              task->id, dj->arrival_tick);
+          delegated = true;
+          break;
+        }
+      }
+      if (delegated)
+        goto skip_arrival;
+
       new_job = create_job(task, core_id);
       if (new_job == NULL) {
         continue;
@@ -253,6 +284,8 @@ static void handle_job_arrivals(uint16_t core_id) {
         }
       }
     }
+  skip_arrival:
+    continue;
   }
 }
 
@@ -416,6 +449,7 @@ void scheduler_init(void) {
     INIT_LIST_HEAD(&core_states[i].discard_list);
     INIT_LIST_HEAD(&core_states[i].pending_jobs_queue);
     INIT_LIST_HEAD(&core_states[i].bid_history_queue);
+    INIT_LIST_HEAD(&core_states[i].delegated_job_queue);
 
     ring_buffer_init(&core_states[i].award_notification_queue,
                      MAX_CONCURRENT_OFFERS, core_states[i].award_buf,
@@ -474,23 +508,24 @@ void scheduler_tick(uint16_t core_id) {
     }
   }
 
-  handle_offer_cleanup(core_id);
-
   handle_running_job(core_id);
+
+  // Ready/Rep/Discard/Pending/Bid Queue
+  handle_offer_cleanup(core_id);
 
   process_award_notifications(core_id);
 
   handle_job_arrivals(core_id);
-
-  attempt_migration_push(core_id);
-
-  participate_in_auctions(core_id);
 
   reclaim_discarded_jobs(core_id);
 
   remove_completed_jobs(core_id);
 
   Job *next_job = select_next_job(core_id);
+
+  // attempt_migration_push(core_id);
+
+  participate_in_auctions(core_id);
 
   if (next_job != NULL) {
     core_state->decision_point = true;
@@ -508,8 +543,10 @@ void scheduler_tick(uint16_t core_id) {
     core_state->decision_point = false;
   }
 
-  if (core_state->is_idle && list_empty(&core_state->bid_history_queue)) {
-    power_management_set_dpm_interval(core_id);
+  if (processor_state.system_time >= core_state->next_dpm_eligible_tick &&
+      core_state->is_idle && list_empty(&core_state->bid_history_queue)) {
+    uint32_t next_eff_arrival_time = find_next_effective_arrival_time(core_id);
+    power_management_set_dpm_interval(core_id, next_eff_arrival_time);
   }
 
   remove_expired_bid_entries(core_id);

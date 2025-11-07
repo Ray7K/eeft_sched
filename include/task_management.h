@@ -52,7 +52,7 @@ typedef struct Job {
   _Atomic bool is_being_offered;
 } Job;
 
-void __release_job_to_pool(Job *job, uint16_t global_core_id);
+void __release_job_to_pool(Job *job, uint16_t core_id);
 
 static inline Job *get_job_ref(Job *job) {
   if (job == NULL) {
@@ -62,28 +62,25 @@ static inline Job *get_job_ref(Job *job) {
   return job;
 }
 
-static inline void put_job_ref(Job *job, uint16_t global_core_id) {
+static inline void put_job_ref(Job *job, uint16_t core_id) {
   if (job == NULL) {
     return;
   }
   int prev = atomic_fetch_sub_explicit(&job->refcount, 1, memory_order_acq_rel);
   if (prev == 1) {
-    __release_job_to_pool(job, global_core_id);
-  } else if (prev < 1) {
-    printf("Error: Job %d refcount dropped below zero!\n",
-           job->parent_task->id);
+    __release_job_to_pool(job, core_id);
   }
 }
 
 void task_management_init(void);
 
-Job *create_job(const Task *parent_task, uint16_t global_core_id);
-Job *clone_job(const Job *job, uint16_t global_core_id);
+Job *create_job(const Task *parent_task, uint16_t core_id);
+Job *clone_job(const Job *job, uint16_t core_id);
 void add_to_queue_sorted(struct list_head *queue_head, Job *job_to_add);
 Job *peek_next_job(struct list_head *queue_head);
 Job *pop_next_job(struct list_head *queue_head);
 void remove_job_with_parent_task_id(struct list_head *queue_head,
-                                    uint32_t task_id, uint16_t global_core_id);
+                                    uint32_t task_id, uint16_t core_id);
 void log_job_queue(LogLevel level, const char *name,
                    struct list_head *queue_head);
 

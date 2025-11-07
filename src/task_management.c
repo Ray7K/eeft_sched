@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define JOBS_PER_CORE 100
+#define JOBS_PER_CORE 200
 
 typedef struct {
   Job job_pool[JOBS_PER_CORE];

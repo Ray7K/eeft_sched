@@ -4,6 +4,9 @@
 #include "task_management.h"
 
 #define MAX_CONCURRENT_OFFERS 128
+#define DPM_MIGRATION_LOOKAHEAD_TICKS 100
+#define MIGRATION_COOLDOWN_TICKS 15
+#define MAX_FUTURE_DELEGATIONS 200
 
 typedef struct {
   Job *bidded_job;
@@ -25,16 +28,17 @@ typedef struct {
   struct list_head link;
 } Offer;
 
-void init_migration(void);
-bid_entry *create_bid_entry(uint16_t core_id);
-void release_bid_entry(bid_entry *entry, uint16_t core_id);
-void remove_expired_bid_entries(uint16_t core_id);
-void add_bid_entry_sorted(bid_entry *new_entry, uint16_t core_id);
-Offer *create_offer(void);
-void release_offer(Offer *offer);
+typedef struct {
+  struct list_head link;
+  uint32_t arrival_tick;
+  uint16_t task_id;
+  bool owned_by_remote;
+} DelegatedJob;
 
-void handle_light_donor_push(uint16_t core_id);
-void handle_idle_donor_push(uint16_t core_id);
+void init_migration(void);
+void remove_expired_bid_entries(uint16_t core_id);
+void release_delegation(DelegatedJob *dj, uint16_t core_id);
+
 void attempt_migration_push(uint16_t core_id);
 void participate_in_auctions(uint16_t core_id);
 void handle_offer_cleanup(uint16_t core_id);

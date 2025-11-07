@@ -14,12 +14,17 @@ typedef struct {
   struct list_head discard_list;
   struct list_head pending_jobs_queue;
   struct list_head bid_history_queue;
+  struct list_head delegated_job_queue;
 
   Job *award_buf[MAX_CONCURRENT_OFFERS];
   _Atomic uint64_t seq[MAX_CONCURRENT_OFFERS];
   ring_buffer award_notification_queue;
 
   Job *running_job;
+
+  uint32_t next_migration_allowed_tick;
+
+  uint32_t next_dpm_eligible_tick;
 
   DPMControlBlock dpm_control_block;
 

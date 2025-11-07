@@ -18,9 +18,10 @@ static inline const Task *find_task_by_id(uint32_t task_id) {
 
 float generate_acet(Job *job);
 
-const Task *find_next_arrival_task(uint16_t core_id);
+uint32_t find_next_effective_arrival_time(uint16_t core_id);
 
-float find_slack(uint16_t core_id, uint32_t t, float scaling_factor);
+float find_slack(uint16_t core_id, CriticalityLevel crit_lvl, uint32_t tstart,
+                 uint32_t tend, float scaling_factor);
 
 bool is_admissible(uint16_t core_id, Job *candidate_job);
 

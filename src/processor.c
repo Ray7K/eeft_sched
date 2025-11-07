@@ -16,7 +16,7 @@ barrier *proc_barrier __attribute__((weak)) = NULL;
 
 static volatile sig_atomic_t shutdown_requested = 0;
 
-#define SYSTEM_TICK_MS 5
+#define SYSTEM_TICK_MS 0
 
 #ifndef TOTAL_TICKS
 #define TOTAL_TICKS 0
