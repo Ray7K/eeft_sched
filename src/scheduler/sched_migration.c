@@ -5,6 +5,7 @@
 #include "scheduler/sched_core.h"
 #include "scheduler/sched_migration.h"
 #include "scheduler/sched_util.h"
+#include "task_management.h"
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -309,6 +310,9 @@ static inline void handle_idle_donor_push(uint8_t core_id) {
           new_job
               ->relative_tuned_deadlines[core_state->local_criticality_level];
       new_job->acet = generate_acet(new_job);
+      new_job->wcet =
+          (float)
+              new_job->parent_task->wcet[core_state->local_criticality_level];
       new_job->executed_time = 0;
 
       new_job->is_replica = (instance->task_type == Replica);
@@ -318,12 +322,30 @@ static inline void handle_idle_donor_push(uint8_t core_id) {
 
       if (offer == NULL) {
         LOG(LOG_LEVEL_WARN, "No available offer slots");
+        release_offer(offer);
         put_job_ref(new_job, core_id);
         continue;
       }
 
+      job_struct *cloned_job = clone_job(new_job, core_id);
+      if (cloned_job == NULL) {
+        LOG(LOG_LEVEL_WARN,
+            "Failed to clone future job %d for migration, pool "
+            "empty",
+            new_job->parent_task->id);
+        release_offer(offer);
+        put_job_ref(new_job, core_id);
+        continue;
+      }
+
+      cloned_job->virtual_deadline = cloned_job->actual_deadline;
+      cloned_job->arrival_time =
+          new_job->arrival_time >= proc_state.system_time + 2
+              ? new_job->arrival_time
+              : proc_state.system_time + 2;
+
       offer->j_orig = new_job;
-      offer->j_copy = clone_job(new_job, core_id);
+      offer->j_copy = cloned_job;
       if (offer->j_copy == NULL) {
         perror("copy is null\n");
       }
@@ -521,9 +543,10 @@ void handle_offer_cleanup(uint8_t core_id) {
       if (cur->best_bidder_id != core_id) {
         LOG(LOG_LEVEL_INFO, "Bids received for future Job %d",
             cur->j_copy->parent_task->id);
-        LOG(LOG_LEVEL_INFO, "Awarding future Job %d (Arrival: %d) to Core %d",
+        LOG(LOG_LEVEL_INFO,
+            "Awarding future Job %d (Arrival: %d WCET: %.2f) to Core %d",
             cur->j_copy->parent_task->id, cur->j_copy->arrival_time,
-            cur->best_bidder_id % NUM_CORES_PER_PROC);
+            cur->j_copy->wcet, cur->best_bidder_id % NUM_CORES_PER_PROC);
 
         job_struct *awarded_job =
             get_job_ref(cur->j_orig); // get: awardee owned ref
@@ -565,13 +588,22 @@ void process_award_notifications(uint8_t core_id) {
     LOG(LOG_LEVEL_INFO, "Received award notification for Job %d",
         awarded_job->parent_task->id);
 
+    awarded_job->wcet =
+        (float)
+            awarded_job->parent_task->wcet[core_state->local_criticality_level];
+    awarded_job->virtual_deadline = awarded_job->actual_deadline;
+
     if (awarded_job->arrival_time > proc_state.system_time) {
-      LOG(LOG_LEVEL_INFO, "Awarded Job %d is a future job arriving at %d",
-          awarded_job->parent_task->id, awarded_job->arrival_time);
+      LOG(LOG_LEVEL_INFO,
+          "Awarded Job %d is a future job arriving at %d with wcet %0.2f",
+          awarded_job->parent_task->id, awarded_job->arrival_time,
+          awarded_job->wcet);
 
       add_to_queue_sorted(&core_state->pending_jobs_queue, awarded_job);
     } else {
       core_state->decision_point = true;
+      awarded_job->state = JOB_STATE_READY;
+
       if (awarded_job->parent_task->crit_level <
           core_state->local_criticality_level) {
         add_to_queue_sorted(&core_state->discard_list, awarded_job);
