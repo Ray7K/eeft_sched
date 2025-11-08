@@ -1,246 +1,201 @@
 #include "lib/barrier.h"
 #include "lib/ring_buffer.h"
-#include "tests/tests.h"
+#include "tests/test_assert.h"
+#include "tests/test_core.h"
+
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdlib.h>
+#include <string.h>
 
-#define BUFFER_SIZE 128
-#define STRESS_NUM_PRODUCERS 4
-#define STRESS_NUM_CONSUMERS 4
-#define STRESS_ITEMS_PER_PRODUCER 100000
-#define STRESS_TOTAL_ITEMS (STRESS_NUM_PRODUCERS * STRESS_ITEMS_PER_PRODUCER)
+#define BUF_SIZE 64lu
+#define MPMC_PROD 4
+#define MPMC_CONS 4
+#define ITEMS_PER_PROD 10000lu
+#define TOTAL_ITEMS (MPMC_PROD * ITEMS_PER_PROD)
 
-// Context for each test, holding the ring buffer and its allocated memory
 typedef struct {
   ring_buffer rb;
   void *buffer;
-  _Atomic uint64_t *seq_array;
-} test_rb_context_t;
+  _Atomic uint64_t *seq;
+} rb_ctx_t;
 
-// Setup function to initialize the ring buffer before each test
-static void setup_ring_buffer(test_case *test) {
-  test_rb_context_t *ctx = malloc(sizeof(test_rb_context_t));
-  ASSERT(test, ctx != NULL);
+static int rb_tests_init(test_ctx *ctx) {
+  rb_ctx_t *priv = malloc(sizeof(rb_ctx_t));
+  ASSERT_RET(ctx, priv != NULL, -ENOMEM, "failed alloc");
 
-  ctx->buffer = malloc(BUFFER_SIZE * sizeof(uint64_t));
-  ASSERT(test, ctx->buffer != NULL);
+  priv->buffer = malloc(BUF_SIZE * sizeof(uint64_t));
+  priv->seq = malloc(BUF_SIZE * sizeof(_Atomic uint64_t));
+  ASSERT_RET(ctx, priv->buffer && priv->seq, -ENOMEM, "alloc fail");
 
-  ctx->seq_array = malloc(BUFFER_SIZE * sizeof(_Atomic uint64_t));
-  ASSERT(test, ctx->seq_array != NULL);
-
-  ring_buffer_init(&ctx->rb, BUFFER_SIZE, ctx->buffer, ctx->seq_array,
+  ring_buffer_init(&priv->rb, BUF_SIZE, priv->buffer, priv->seq,
                    sizeof(uint64_t));
-
-  test->priv = ctx; // Store context in the test case for access
+  ctx->priv = priv;
+  return 0;
 }
 
-// Teardown function to free memory after each test
-static void teardown_ring_buffer(test_case *test) {
-  if (test->priv) {
-    test_rb_context_t *ctx = test->priv;
-    free(ctx->buffer);
-    free(ctx->seq_array);
-    free(ctx);
+static void rb_tests_exit(test_ctx *ctx) {
+  rb_ctx_t *priv = ctx->priv;
+  free(priv->buffer);
+  free(priv->seq);
+  free(priv);
+}
+
+static void test_rb_init_state(test_ctx *ctx) {
+  rb_ctx_t *priv = ctx->priv;
+  EXPECT_EQ(ctx, atomic_load(&priv->rb.head), 0lu);
+  EXPECT_EQ(ctx, atomic_load(&priv->rb.tail), 0lu);
+  EXPECT_EQ(ctx, priv->rb.buf_size, BUF_SIZE);
+  for (uint64_t i = 0; i < BUF_SIZE; i++)
+    EXPECT_EQ(ctx, atomic_load(&priv->seq[i]), i);
+}
+
+static void test_rb_single_enqueue_dequeue(test_ctx *ctx) {
+  rb_ctx_t *priv = ctx->priv;
+  uint64_t val = 42, out = 0;
+  EXPECT_OK(ctx, ring_buffer_enqueue(&priv->rb, &val));
+  EXPECT_OK(ctx, ring_buffer_dequeue(&priv->rb, &out));
+  EXPECT_EQ(ctx, val, out);
+}
+
+static void test_rb_fill_empty_wrap(test_ctx *ctx) {
+  rb_ctx_t *priv = ctx->priv;
+  for (uint64_t i = 0; i < BUF_SIZE; i++)
+    EXPECT_OK(ctx, ring_buffer_try_enqueue(&priv->rb, &i));
+
+  uint64_t extra = 999;
+  EXPECT_EQ(ctx, ring_buffer_try_enqueue(&priv->rb, &extra), -ENOSPC);
+
+  for (uint64_t i = 0; i < BUF_SIZE; i++) {
+    uint64_t out = 0;
+    EXPECT_OK(ctx, ring_buffer_try_dequeue(&priv->rb, &out));
+    EXPECT_EQ(ctx, out, i);
+  }
+
+  EXPECT_EQ(ctx, ring_buffer_try_dequeue(&priv->rb, &extra), -EAGAIN);
+
+  for (uint64_t i = 0; i < BUF_SIZE * 2; i++) {
+    EXPECT_OK(ctx, ring_buffer_enqueue(&priv->rb, &i));
+    uint64_t out;
+    EXPECT_OK(ctx, ring_buffer_dequeue(&priv->rb, &out));
+    EXPECT_EQ(ctx, out, i);
   }
 }
 
-// --- Single-Threaded Tests ---
+static void test_rb_clear(test_ctx *ctx) {
+  rb_ctx_t *priv = ctx->priv;
+  for (uint64_t i = 0; i < BUF_SIZE / 2; i++)
+    EXPECT_OK(ctx, ring_buffer_try_enqueue(&priv->rb, &i));
 
-static void test_rb_init_state(test_case *test) {
-  test_rb_context_t *ctx = test->priv;
-  EXPECT(test, atomic_load(&ctx->rb.head) == 0);
-  EXPECT(test, atomic_load(&ctx->rb.tail) == 0);
-  EXPECT(test, ctx->rb.buf_size == BUFFER_SIZE);
-  for (uint64_t i = 0; i < BUFFER_SIZE; i++) {
-    EXPECT(test, atomic_load(&ctx->rb.seq[i]) == i);
+  ring_buffer_clear(&priv->rb);
+  uint64_t extra = 0;
+  EXPECT_EQ(ctx, ring_buffer_try_dequeue(&priv->rb, &extra), -EAGAIN);
+
+  for (uint64_t i = 0; i < BUF_SIZE; i++) {
+    uint64_t seq = atomic_load(&priv->seq[i]);
+    EXPECT(ctx, seq == i || seq >= BUF_SIZE);
   }
 }
 
-static void test_rb_single_enqueue_dequeue(test_case *test) {
-  test_rb_context_t *ctx = test->priv;
-  uint64_t in_val = 12345;
-  uint64_t out_val = 0;
-
-  int enq_ret = ring_buffer_enqueue(&ctx->rb, &in_val);
-  EXPECT(test, enq_ret == 0);
-
-  int deq_ret = ring_buffer_dequeue(&ctx->rb, &out_val);
-  EXPECT(test, deq_ret == 0);
-  EXPECT(test, out_val == in_val);
-}
-
-static void test_rb_empty_dequeue_fails(test_case *test) {
-  test_rb_context_t *ctx = test->priv;
-  uint64_t out_val = 0;
-  int deq_ret = ring_buffer_try_dequeue(&ctx->rb, &out_val);
-  EXPECT(test, deq_ret == -1);
-}
-
-static void test_rb_fill_and_empty(test_case *test) {
-  test_rb_context_t *ctx = test->priv;
-
-  // Fill the buffer
-  for (uint64_t i = 0; i < BUFFER_SIZE; i++) {
-    int enq_ret = ring_buffer_try_enqueue(&ctx->rb, &i);
-    EXPECT(test, enq_ret == 0);
-  }
-
-  // Next enqueue should fail because the buffer is full
-  uint64_t extra_val = 999;
-  int full_ret = ring_buffer_try_enqueue(&ctx->rb, &extra_val);
-  EXPECT(test, full_ret == -1);
-
-  // Empty the buffer and check values
-  for (uint64_t i = 0; i < BUFFER_SIZE; i++) {
-    uint64_t out_val = 0;
-    int deq_ret = ring_buffer_try_dequeue(&ctx->rb, &out_val);
-    EXPECT(test, deq_ret == 0);
-    EXPECT(test, out_val == i);
-  }
-
-  // Next dequeue should fail because the buffer is empty
-  int empty_ret = ring_buffer_try_dequeue(&ctx->rb, &extra_val);
-  EXPECT(test, empty_ret == -1);
-}
-
-static void test_rb_wrap_around(test_case *test) {
-  test_rb_context_t *ctx = test->priv;
-
-  // Enqueue and dequeue more than BUFFER_SIZE items to test wrap-around
-  for (uint64_t i = 0; i < BUFFER_SIZE * 3; i++) {
-    int enq_ret = ring_buffer_enqueue(&ctx->rb, &i);
-    ASSERT(test, enq_ret == 0);
-
-    uint64_t out_val = 0;
-    int deq_ret = ring_buffer_dequeue(&ctx->rb, &out_val);
-    ASSERT(test, deq_ret == 0);
-    ASSERT(test, out_val == i);
-  }
-  EXPECT(test, atomic_load(&ctx->rb.head) == BUFFER_SIZE * 3);
-  EXPECT(test, atomic_load(&ctx->rb.tail) == BUFFER_SIZE * 3);
-}
-
-// --- Multi-Threaded Stress Test ---
-
-// Shared data for MPMC test
 typedef struct {
   ring_buffer *rb;
-  barrier *barrier;
-  _Atomic int64_t *items_to_consume;
-  // Results need a mutex because multiple consumers write to it
-  pthread_mutex_t *results_lock;
-  uint64_t *producer_counts; // Array of size STRESS_NUM_PRODUCERS
-  int thread_id;
-} mpmc_thread_data_t;
+  barrier *bar;
+  _Atomic int64_t *remaining;
+  pthread_mutex_t *lock;
+  uint64_t *counts;
+  uint64_t id;
+} thread_data_t;
 
-// Producer thread function
-static void *producer_func(void *arg) {
-  mpmc_thread_data_t *data = arg;
-  barrier_wait(data->barrier);
-
-  for (uint64_t i = 0; i < STRESS_ITEMS_PER_PRODUCER; i++) {
-    // Pack producer ID and item ID into a single value
-    uint64_t val = ((uint64_t)data->thread_id << 32) | (uint64_t)i;
-    ring_buffer_enqueue(data->rb, &val);
+static void *producer(void *arg) {
+  thread_data_t *d = arg;
+  barrier_wait(d->bar);
+  for (uint64_t i = 0; i < ITEMS_PER_PROD; i++) {
+    uint64_t val = (d->id << 32) | i;
+    ring_buffer_enqueue(d->rb, &val);
   }
   return NULL;
 }
 
-// Consumer thread function
-static void *consumer_func(void *arg) {
-  mpmc_thread_data_t *data = arg;
-  barrier_wait(data->barrier);
-
-  // Each consumer tries to claim an item to consume until none are left
-  while (atomic_fetch_sub_explicit(data->items_to_consume, 1,
-                                   memory_order_relaxed) > 0) {
-    uint64_t out_val = 0;
-    ring_buffer_dequeue(data->rb, &out_val);
-
-    uint32_t producer_id = out_val >> 32;
-    // uint32_t item_id = out_val & 0xFFFFFFFF;
-
-    // Lock results to safely update the counts
-    pthread_mutex_lock(data->results_lock);
-    if (producer_id < STRESS_NUM_PRODUCERS) {
-      data->producer_counts[producer_id]++;
-    }
-    pthread_mutex_unlock(data->results_lock);
+static void *consumer(void *arg) {
+  thread_data_t *d = arg;
+  barrier_wait(d->bar);
+  while (atomic_fetch_sub(d->remaining, 1) > 0) {
+    uint64_t val = 0;
+    ring_buffer_dequeue(d->rb, &val);
+    uint32_t pid = val >> 32;
+    pthread_mutex_lock(d->lock);
+    d->counts[pid]++;
+    pthread_mutex_unlock(d->lock);
   }
   return NULL;
 }
 
-static void test_rb_mpmc_stress(test_case *test) {
-  test_rb_context_t *ctx = test->priv;
-  pthread_t producers[STRESS_NUM_PRODUCERS];
-  pthread_t consumers[STRESS_NUM_CONSUMERS];
-  mpmc_thread_data_t thread_data[STRESS_NUM_PRODUCERS + STRESS_NUM_CONSUMERS];
-  barrier barrier;
+static void test_rb_mpmc_stress(test_ctx *ctx) {
+  rb_ctx_t *priv = ctx->priv;
+  barrier bar;
+  pthread_mutex_t lock;
+  pthread_t prod[MPMC_PROD], cons[MPMC_CONS];
+  thread_data_t td[MPMC_PROD + MPMC_CONS];
+  uint64_t counts[MPMC_PROD] = {0};
+  _Atomic int64_t remaining;
+  atomic_init(&remaining, TOTAL_ITEMS);
 
-  // Shared results data
-  uint64_t producer_counts[STRESS_NUM_PRODUCERS] = {0};
-  pthread_mutex_t results_lock;
-  _Atomic int64_t items_to_consume;
+  pthread_mutex_init(&lock, NULL);
+  barrier_init(&bar, MPMC_PROD + MPMC_CONS, 0);
 
-  pthread_mutex_init(&results_lock, NULL);
-  barrier_init(&barrier, STRESS_NUM_PRODUCERS + STRESS_NUM_CONSUMERS, 0);
-  atomic_init(&items_to_consume, STRESS_TOTAL_ITEMS);
-
-  // Create producer threads
-  for (int i = 0; i < STRESS_NUM_PRODUCERS; i++) {
-    thread_data[i] = (mpmc_thread_data_t){
-        .rb = &ctx->rb, .barrier = &barrier, .thread_id = i};
-    pthread_create(&producers[i], NULL, producer_func, &thread_data[i]);
+  for (uint64_t i = 0; i < MPMC_PROD; i++) {
+    td[i] = (thread_data_t){.rb = &priv->rb, .bar = &bar, .id = i};
+    pthread_create(&prod[i], NULL, producer, &td[i]);
   }
 
-  // Create consumer threads
-  for (int i = 0; i < STRESS_NUM_CONSUMERS; i++) {
-    int data_idx = i + STRESS_NUM_PRODUCERS;
-    thread_data[data_idx] =
-        (mpmc_thread_data_t){.rb = &ctx->rb,
-                             .barrier = &barrier,
-                             .thread_id = i,
-                             .items_to_consume = &items_to_consume,
-                             .results_lock = &results_lock,
-                             .producer_counts = producer_counts};
-    pthread_create(&consumers[i], NULL, consumer_func, &thread_data[data_idx]);
+  for (uint64_t i = 0; i < MPMC_CONS; i++) {
+    uint64_t idx = i + MPMC_PROD;
+    td[idx] = (thread_data_t){.rb = &priv->rb,
+                              .bar = &bar,
+                              .remaining = &remaining,
+                              .lock = &lock,
+                              .counts = counts};
+    pthread_create(&cons[i], NULL, consumer, &td[idx]);
   }
 
-  // Wait for all threads to complete
-  for (int i = 0; i < STRESS_NUM_PRODUCERS; i++) {
-    pthread_join(producers[i], NULL);
-  }
-  for (int i = 0; i < STRESS_NUM_CONSUMERS; i++) {
-    pthread_join(consumers[i], NULL);
-  }
+  for (uint64_t i = 0; i < MPMC_PROD; i++)
+    pthread_join(prod[i], NULL);
+  for (uint64_t i = 0; i < MPMC_CONS; i++)
+    pthread_join(cons[i], NULL);
 
-  barrier_destroy(&barrier);
-  pthread_mutex_destroy(&results_lock);
+  barrier_destroy(&bar);
+  pthread_mutex_destroy(&lock);
 
-  // --- Verification ---
-  uint64_t total_consumed = 0;
-  for (int i = 0; i < STRESS_NUM_PRODUCERS; i++) {
-    // Check that each producer's items were all consumed
-    EXPECT(test, producer_counts[i] == STRESS_ITEMS_PER_PRODUCER);
-    total_consumed += producer_counts[i];
+  uint64_t total = 0;
+  for (uint64_t i = 0; i < MPMC_PROD; i++) {
+    EXPECT_EQ(ctx, counts[i], ITEMS_PER_PROD);
+    total += counts[i];
   }
-  // Check that the total number of items matches
-  EXPECT(test, total_consumed == STRESS_TOTAL_ITEMS);
-  // Check that the head and tail pointers match the total number of items
-  EXPECT(test, atomic_load(&ctx->rb.head) == STRESS_TOTAL_ITEMS);
-  EXPECT(test, atomic_load(&ctx->rb.tail) == STRESS_TOTAL_ITEMS);
+  EXPECT_EQ(ctx, total, TOTAL_ITEMS);
 }
 
-// Register all the tests to be run
-REGISTER_TEST("ring_buffer_init_state", test_rb_init_state, setup_ring_buffer,
-              teardown_ring_buffer);
-REGISTER_TEST("ring_buffer_single_enq_deq", test_rb_single_enqueue_dequeue,
-              setup_ring_buffer, teardown_ring_buffer);
-REGISTER_TEST("ring_buffer_empty_dequeue_fails", test_rb_empty_dequeue_fails,
-              setup_ring_buffer, teardown_ring_buffer);
-REGISTER_TEST("ring_buffer_fill_and_empty", test_rb_fill_and_empty,
-              setup_ring_buffer, teardown_ring_buffer);
-REGISTER_TEST("ring_buffer_wrap_around", test_rb_wrap_around, setup_ring_buffer,
-              teardown_ring_buffer);
-REGISTER_TEST("ring_buffer_mpmc_stress", test_rb_mpmc_stress, setup_ring_buffer,
-              teardown_ring_buffer);
+static void test_rb_small_buffer(test_ctx *ctx) {
+  ring_buffer rb;
+  uint64_t buf[2];
+  _Atomic uint64_t seq[2];
+  EXPECT_EQ(ctx, ring_buffer_init(&rb, 2, buf, seq, sizeof(uint64_t)), -EINVAL);
+}
+
+static test_case rb_cases[] = {
+    TEST_CASE(test_rb_init_state),
+    TEST_CASE(test_rb_single_enqueue_dequeue),
+    TEST_CASE(test_rb_fill_empty_wrap),
+    TEST_CASE(test_rb_clear),
+    TEST_CASE(test_rb_mpmc_stress),
+    TEST_CASE(test_rb_small_buffer),
+    {NULL, NULL},
+};
+
+test_suite ring_buffer_suite = {
+    .name = "ring_buffer_suite",
+    .init = rb_tests_init,
+    .exit = rb_tests_exit,
+    .cases = rb_cases,
+};
+
+REGISTER_SUITE(ring_buffer_suite);

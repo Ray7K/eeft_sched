@@ -1,31 +1,27 @@
 #include "lib/barrier.h"
+#include <errno.h>
 
 int barrier_init(barrier *barrier, unsigned n, int pshared) {
-  if (n == 0) {
+  if (n == 0)
     return EINVAL;
-  }
 
   pthread_mutexattr_t mut_attr;
   pthread_condattr_t cond_attr;
+  int ret = 0;
 
   pthread_mutexattr_init(&mut_attr);
   pthread_condattr_init(&cond_attr);
 
   if (pshared) {
-    if (pthread_mutexattr_setpshared(&mut_attr, PTHREAD_PROCESS_SHARED) != 0) {
+    if ((ret = pthread_mutexattr_setpshared(&mut_attr, PTHREAD_PROCESS_SHARED)))
       goto fail;
-    }
-
-    if (pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED) != 0) {
+    if ((ret = pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED)))
       goto fail;
-    }
   }
 
-  if (pthread_mutex_init(&barrier->mut, &mut_attr) != 0) {
+  if ((ret = pthread_mutex_init(&barrier->mut, &mut_attr)))
     goto fail;
-  }
-
-  if (pthread_cond_init(&barrier->cond, &cond_attr) != 0) {
+  if ((ret = pthread_cond_init(&barrier->cond, &cond_attr))) {
     pthread_mutex_destroy(&barrier->mut);
     goto fail;
   }
@@ -34,12 +30,15 @@ int barrier_init(barrier *barrier, unsigned n, int pshared) {
   barrier->count = 0;
   barrier->cycle = 0;
 
-  return 0;
+  ret = 0;
+  goto cleanup;
 
 fail:
+  ret = (ret == 0) ? EAGAIN : ret;
+cleanup:
   pthread_mutexattr_destroy(&mut_attr);
   pthread_condattr_destroy(&cond_attr);
-  return EPERM;
+  return ret;
 }
 
 int barrier_destroy(barrier *barrier) {

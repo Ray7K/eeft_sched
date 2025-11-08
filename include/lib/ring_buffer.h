@@ -1,6 +1,7 @@
 #ifndef RING_BUFFER_H
 #define RING_BUFFER_H
 
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,9 +18,12 @@ typedef struct {
   void *buffer;
 } ring_buffer;
 
-static inline void ring_buffer_init(ring_buffer *rb, uint64_t size,
-                                    void *buffer, _Atomic uint64_t *seq,
-                                    uint64_t elem_size) {
+static inline int ring_buffer_init(ring_buffer *rb, uint64_t size, void *buffer,
+                                   _Atomic uint64_t *seq, uint64_t elem_size) {
+  if (size < 3) {
+    return -EINVAL;
+  }
+
   rb->buf_size = size;
   rb->buffer = buffer;
   rb->buf_elem_size = elem_size;
@@ -31,18 +35,22 @@ static inline void ring_buffer_init(ring_buffer *rb, uint64_t size,
 
   atomic_store(&rb->head, 0);
   atomic_store(&rb->tail, 0);
+
+  return 0;
 }
 
 static inline int ring_buffer_try_enqueue(ring_buffer *rb, void *elem) {
+  if (!rb || !elem)
+    return -EINVAL;
+
   uint64_t tail = atomic_load(&rb->tail);
 
   if (atomic_load_explicit(&rb->seq[tail % rb->buf_size],
                            memory_order_acquire) != tail)
-    return -1;
+    return -ENOSPC;
 
-  if (!atomic_compare_exchange_strong(&rb->tail, &tail, tail + 1)) {
-    return -1;
-  }
+  if (!atomic_compare_exchange_strong(&rb->tail, &tail, tail + 1))
+    return -EAGAIN;
 
   memcpy((char *)rb->buffer + (tail % rb->buf_size) * rb->buf_elem_size, elem,
          rb->buf_elem_size);
@@ -68,15 +76,17 @@ static inline int ring_buffer_enqueue(ring_buffer *rb, void *elem) {
 }
 
 static inline int ring_buffer_try_dequeue(ring_buffer *rb, void *elem) {
+  if (!rb || !elem)
+    return -EINVAL;
+
   uint64_t head = atomic_load(&rb->head);
 
   if (atomic_load_explicit(&rb->seq[head % rb->buf_size],
                            memory_order_acquire) != head + 1)
-    return -1;
+    return -EAGAIN;
 
-  if (!atomic_compare_exchange_strong(&rb->head, &head, head + 1)) {
-    return -1;
-  }
+  if (!atomic_compare_exchange_strong(&rb->head, &head, head + 1))
+    return -EAGAIN;
 
   memcpy(elem, (char *)rb->buffer + (head % rb->buf_size) * rb->buf_elem_size,
          rb->buf_elem_size);

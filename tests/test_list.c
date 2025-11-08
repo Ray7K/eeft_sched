@@ -1,134 +1,177 @@
 #include "lib/list.h"
-#include "tests/tests.h"
-#include <stddef.h>
+#include "tests/test_assert.h"
+#include "tests/test_core.h"
 
-struct my_node {
-  int data;
+#include <stdlib.h>
+
+struct test_node {
+  int val;
   struct list_head list;
 };
 
-static void test_list_init_empty(test_case *test) {
-  LIST_HEAD(head);
-  EXPECT(test, list_empty(&head));
-  EXPECT(test, head.next == &head);
-  EXPECT(test, head.prev == &head);
-
-  INIT_LIST_HEAD(&head);
-  EXPECT(test, list_empty(&head));
-  EXPECT(test, head.next == &head);
-  EXPECT(test, head.prev == &head);
+static int list_tests_init(test_ctx *ctx) {
+  (void)ctx;
+  return 0;
 }
 
-static void test_list_add_and_first(test_case *test) {
+static void list_tests_exit(test_ctx *ctx) { (void)ctx; }
+
+static void test_init_and_empty(test_ctx *ctx) {
   LIST_HEAD(head);
-  struct my_node *first = list_first_entry(&head, struct my_node, list);
-  ASSERT(test, first == NULL);
-
-  struct my_node node1;
-  node1.data = 1;
-  list_add(&node1.list, &head);
-
-  ASSERT(test, !list_empty(&head));
-  first = list_first_entry(&head, struct my_node, list);
-  ASSERT(test, first == &node1);
-  EXPECT(test, first->data == 1);
-
-  struct my_node node2;
-  node2.data = 2;
-  list_add(&node2.list, &head);
-
-  first = list_first_entry(&head, struct my_node, list);
-  ASSERT(test, first == &node2);
-  EXPECT(test, first->data == 2);
-  EXPECT(test, head.next == &node2.list);
-  EXPECT(test, node2.list.next == &node1.list);
-  EXPECT(test, node1.list.next == &head);
-  EXPECT(test, head.prev == &node1.list);
-  EXPECT(test, node1.list.prev == &node2.list);
-  EXPECT(test, node2.list.prev == &head);
+  EXPECT(ctx, list_empty(&head));
+  EXPECT_EQ(ctx, head.next, &head);
+  EXPECT_EQ(ctx, head.prev, &head);
 }
 
-// Test case for deleting an element from the list
-static void test_list_del(test_case *test) {
+static void test_add_single_and_delete(test_ctx *ctx) {
   LIST_HEAD(head);
-  struct my_node node1;
-  node1.data = 1;
-  list_add(&node1.list, &head);
-  ASSERT(test, !list_empty(&head));
+  struct test_node node = {.val = 1};
+  INIT_LIST_HEAD(&node.list);
 
-  list_del(&node1.list);
-  ASSERT(test, list_empty(&head));
-  EXPECT(test, node1.list.next == NULL);
-  EXPECT(test, node1.list.prev == NULL);
+  list_add(&node.list, &head);
+  EXPECT_FALSE(ctx, list_empty(&head));
+  EXPECT_EQ(ctx, head.next, &node.list);
+  EXPECT_EQ(ctx, head.prev, &node.list);
+  EXPECT_EQ(ctx, node.list.next, &head);
+  EXPECT_EQ(ctx, node.list.prev, &head);
+
+  list_del(&node.list);
+  EXPECT_TRUE(ctx, list_empty(&head));
+  EXPECT_EQ(ctx, node.list.next, NULL);
+  EXPECT_EQ(ctx, node.list.prev, NULL);
 }
 
-static void test_list_iteration(test_case *test) {
+static void test_add_multiple_and_iteration(test_ctx *ctx) {
   LIST_HEAD(head);
-  struct my_node nodes[5];
-  for (int i = 0; i < 5; i++) {
-    nodes[i].data = i;
-    list_add(&nodes[i].list, &head);
-  }
+  struct test_node a = {.val = 1}, b = {.val = 2}, c = {.val = 3};
 
-  int expected_data = 4;
-  struct my_node *pos;
+  list_add(&a.list, &head);
+  list_add(&b.list, &head);
+  list_add(&c.list, &head);
+
+  struct test_node *pos;
+  int expected_vals[] = {3, 2, 1};
+  int idx = 0;
   list_for_each_entry(pos, &head, list) {
-    EXPECT(test, pos->data == expected_data);
-    expected_data--;
+    EXPECT_EQ(ctx, pos->val, expected_vals[idx]);
+    idx++;
   }
-  ASSERT(test, expected_data == -1);
+  EXPECT_EQ(ctx, idx, 3);
 }
 
-static void test_list_iteration_safe(test_case *test) {
+static void test_iteration_empty(test_ctx *ctx) {
   LIST_HEAD(head);
-  struct my_node nodes[5];
-  for (int i = 0; i < 5; i++) {
-    nodes[i].data = i;
-    list_add(&nodes[i].list, &head);
-  }
-
+  struct test_node *pos;
   int count = 0;
-  struct my_node *pos, *n;
-  list_for_each_entry_safe(pos, n, &head, list) {
-    list_del(&pos->list);
-    count++;
-  }
-  ASSERT(test, count == 5);
-  ASSERT(test, list_empty(&head));
+  list_for_each_entry(pos, &head, list) { count++; }
+  EXPECT_EQ(ctx, count, 0);
 }
 
-static void test_list_splice(test_case *test) {
-  LIST_HEAD(list1);
-  struct my_node nodes1[3];
-  for (int i = 0; i < 3; i++) {
-    nodes1[i].data = i;
-    list_add(&nodes1[i].list, &list1); // list1: 2, 1, 0
-  }
+static void test_delete_first_and_last(test_ctx *ctx) {
+  LIST_HEAD(head);
+  struct test_node a = {.val = 1}, b = {.val = 2}, c = {.val = 3};
 
-  LIST_HEAD(list2);
-  struct my_node nodes2[2];
-  for (int i = 0; i < 2; i++) {
-    nodes2[i].data = i + 3;
-    list_add(&nodes2[i].list, &list2); // list2: 4, 3
+  list_add(&a.list, &head);
+  list_add(&b.list, &head);
+  list_add(&c.list, &head);
+
+  struct test_node *first = list_first_entry(&head, struct test_node, list);
+  struct test_node *last = list_last_entry(&head, struct test_node, list);
+
+  EXPECT_EQ(ctx, first, &c);
+  EXPECT_EQ(ctx, last, &a);
+
+  list_del(&c.list);
+  EXPECT_FALSE(ctx, list_empty(&head));
+  EXPECT_EQ(ctx, list_first_entry(&head, struct test_node, list), &b);
+
+  list_del(&a.list);
+  EXPECT_FALSE(ctx, list_empty(&head));
+  EXPECT_EQ(ctx, list_last_entry(&head, struct test_node, list), &b);
+
+  list_del(&b.list);
+  EXPECT_TRUE(ctx, list_empty(&head));
+}
+
+static void test_splice_empty_src(test_ctx *ctx) {
+  LIST_HEAD(dest);
+  LIST_HEAD(src);
+
+  struct test_node n = {.val = 1};
+  list_add(&n.list, &dest);
+
+  list_splice_init(&src, &dest); // src empty, no change
+
+  EXPECT_FALSE(ctx, list_empty(&dest));
+  EXPECT_EQ(ctx, list_first_entry(&dest, struct test_node, list), &n);
+}
+
+static void test_splice_into_empty_dest(test_ctx *ctx) {
+  LIST_HEAD(dest);
+  LIST_HEAD(src);
+  struct test_node a = {.val = 1}, b = {.val = 2};
+
+  list_add(&a.list, &src);
+  list_add(&b.list, &src);
+
+  list_splice_init(&src, &dest);
+  EXPECT_TRUE(ctx, list_empty(&src));
+  EXPECT_FALSE(ctx, list_empty(&dest));
+
+  int expected_vals[] = {2, 1};
+  struct test_node *pos;
+  int idx = 0;
+  list_for_each_entry(pos, &dest, list) {
+    EXPECT_EQ(ctx, pos->val, expected_vals[idx]);
+    idx++;
   }
+  EXPECT_EQ(ctx, idx, 2);
+}
+
+static void test_splice_various_sizes(test_ctx *ctx) {
+  LIST_HEAD(list1);
+  LIST_HEAD(list2);
+
+  struct test_node a = {.val = 1}, b = {.val = 2}, c = {.val = 3};
+  struct test_node x = {.val = 10}, y = {.val = 20};
+
+  list_add(&a.list, &list1);
+  list_add(&b.list, &list1);
+  list_add(&c.list, &list1);
+
+  list_add(&x.list, &list2);
+  list_add(&y.list, &list2);
 
   list_splice_init(&list1, &list2);
+  EXPECT_TRUE(ctx, list_empty(&list1));
 
-  ASSERT(test, list_empty(&list1));
-
-  int expected_order[] = {2, 1, 0, 4, 3};
-  int i = 0;
-  struct my_node *pos;
+  int expected_vals[] = {3, 2, 1, 20, 10};
+  struct test_node *pos;
+  int idx = 0;
   list_for_each_entry(pos, &list2, list) {
-    EXPECT(test, pos->data == expected_order[i]);
-    i++;
+    EXPECT_EQ(ctx, pos->val, expected_vals[idx]);
+    idx++;
   }
-  ASSERT(test, i == 5);
+  EXPECT_EQ(ctx, idx, 5);
 }
 
-REGISTER_TEST("list_init_empty", test_list_init_empty, NULL, NULL);
-REGISTER_TEST("list_add_and_first", test_list_add_and_first, NULL, NULL);
-REGISTER_TEST("list_del", test_list_del, NULL, NULL);
-REGISTER_TEST("list_iteration", test_list_iteration, NULL, NULL);
-REGISTER_TEST("list_iteration_safe", test_list_iteration_safe, NULL, NULL);
-REGISTER_TEST("list_splice", test_list_splice, NULL, NULL);
+static test_case list_cases[] = {
+    TEST_CASE(test_init_and_empty),
+    TEST_CASE(test_add_single_and_delete),
+    TEST_CASE(test_add_multiple_and_iteration),
+    TEST_CASE(test_iteration_empty),
+    TEST_CASE(test_delete_first_and_last),
+    TEST_CASE(test_splice_empty_src),
+    TEST_CASE(test_splice_into_empty_dest),
+    TEST_CASE(test_splice_various_sizes),
+    {NULL, NULL},
+};
+
+test_suite list_suite = {
+    .name = "list_suite",
+    .init = list_tests_init,
+    .exit = list_tests_exit,
+    .cases = list_cases,
+};
+
+REGISTER_SUITE(list_suite);

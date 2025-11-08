@@ -3,13 +3,14 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdint.h>
 
 #define BARRIER_SERIAL_THREAD 1
 
 typedef struct {
-  unsigned count;
-  unsigned target;
-  unsigned cycle;
+  uint64_t count;
+  uint64_t target;
+  uint64_t cycle;
   pthread_mutex_t mut;
   pthread_cond_t cond;
 } barrier;

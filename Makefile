@@ -47,8 +47,8 @@ ifeq ($(UBSAN),1)
 endif
 
 DEBUG_FLAGS   = -g $(SANITIZER_FLAGS)
-RELEASE_FLAGS = -O3 -flto
-PROFILE_FLAGS = -O3 -g -flto
+RELEASE_FLAGS = -O3
+PROFILE_FLAGS = -O3 -g
 
 
 V ?= 0
