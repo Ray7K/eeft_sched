@@ -1,10 +1,11 @@
 #ifndef LOG_H
 #define LOG_H
 
+#include "lib/platform_sem.h"
+#include "lib/ring_buffer.h"
+
 #include "processor.h"
-#include "ring_buffer.h"
-#include <dispatch/dispatch.h>
-#include <semaphore.h>
+
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,7 +28,7 @@ typedef struct {
 
 extern log_level current_log_level;
 
-extern dispatch_semaphore_t log_sem;
+extern platform_sem_t log_sem;
 
 extern _Atomic int log_wakeup_pending;
 

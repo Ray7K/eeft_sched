@@ -1,9 +1,9 @@
 #include "lib/log.h"
+#include "lib/platform_sem.h"
 #include "lib/ring_buffer.h"
+
 #include "processor.h"
-#include <dispatch/dispatch.h>
 #include <pthread.h>
-#include <semaphore.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -16,7 +16,7 @@ static FILE *log_file = NULL;
 static pthread_t logger_thread;
 static _Atomic int shutdown_requested = 0;
 
-dispatch_semaphore_t log_sem;
+platform_sem_t log_sem;
 
 #define LOG_QUEUE_SIZE 512
 
@@ -34,7 +34,7 @@ static void *logger_thread_func(void *arg) {
   atomic_store(&log_wakeup_pending, 0);
 
   while (!atomic_load(&shutdown_requested)) {
-    dispatch_semaphore_wait(log_sem, DISPATCH_TIME_FOREVER);
+    platform_sem_wait(&log_sem);
 
     while (ring_buffer_try_dequeue(&log_queue, msg) == 0) {
       if (log_file) {
@@ -73,11 +73,11 @@ void log_system_init(uint8_t proc_id) {
 void log_system_shutdown(void) {
   atomic_store(&shutdown_requested, 1);
 
-  dispatch_semaphore_signal(log_sem);
+  platform_sem_post(&log_sem);
 
   pthread_join(logger_thread, NULL);
 
-  dispatch_release(log_sem);
+  platform_sem_destroy(&log_sem);
 
   if (log_file) {
     fflush(log_file);
