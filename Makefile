@@ -2,6 +2,8 @@
 
 PACKAGE_NAME = eeft_sched
 
+UNAME_S := $(shell uname -s)
+
 CC = clang
 
 CFLAGS = -Wall -Wextra -std=c11 -Iinclude -pthread -MMD -MP
@@ -10,6 +12,12 @@ CFLAGS += -Wvla -Wfloat-equal -Wshadow -Wpointer-arith -Wno-cast-align \
           -Wstrict-prototypes -Wmissing-prototypes -Wreturn-type
 
 LDFLAGS = -pthread
+
+ifeq ($(UNAME_S),Darwin)
+    LDFLAGS += -Wl,-dead_strip
+else
+    LDFLAGS += -Wl,--gc-sections
+endif
 
 TICKS ?= 1000
 CFLAGS += -DTOTAL_TICKS=$(TICKS)
@@ -114,6 +122,10 @@ define MSG_SUB
 	@printf "      $(COLOR_DIM)-> %s...$(COLOR_RESET)\n" "$1"
 endef
 
+define MSG_SUB_INLINE
+	printf "      $(COLOR_DIM)-> %s...$(COLOR_RESET)\n" "$1"
+endef
+
 
 SRC_FILES := $(shell find $(SRC_DIR) -type f -name '*.c')
 TEST_FILES = $(wildcard $(TEST_DIR)/*.c)
@@ -180,8 +192,10 @@ clean:
 $(DEBUG_BIN_DIR)/$(PACKAGE_NAME): $(DEBUG_OBJECTS) | $(DEBUG_BIN_DIR)
 	$(call MSG_LD, $@)
 	$Q$(CC) $(CFLAGS) $(DEBUG_FLAGS) $(LDFLAGS) $^ -o $@
-	$(call MSG_SUB, dSYM)
-	$Qdsymutil $@
+	$Qif [ "$(UNAME_S)" = "Darwin" ]; then \
+	    $(call MSG_SUB_INLINE, dSYM); \
+	    dsymutil $@ || true; \
+	fi
 	$(call log_ok, Built debug: $@)
 
 $(RELEASE_BIN_DIR)/$(PACKAGE_NAME): $(RELEASE_OBJECTS) | $(RELEASE_BIN_DIR)
@@ -194,8 +208,10 @@ $(RELEASE_BIN_DIR)/$(PACKAGE_NAME): $(RELEASE_OBJECTS) | $(RELEASE_BIN_DIR)
 $(PROFILE_BIN_DIR)/$(PACKAGE_NAME): $(PROFILE_OBJECTS) | $(PROFILE_BIN_DIR)
 	$(call MSG_LD, $@)
 	$Q$(CC) $(CFLAGS) $(PROFILE_FLAGS) $(LDFLAGS) $^ -o $@
-	$(call MSG_SUB, dSYM)
-	$Qdsymutil $@
+	$Qif [ "$(UNAME_S)" = "Darwin" ]; then \
+	    $(call MSG_SUB_INLINE, dSYM); \
+	    dsymutil $@ || true; \
+	fi
 	$(call log_ok, Built profile: $@)
 
 
@@ -214,8 +230,10 @@ $(RELEASE_BIN_DIR)/$(PACKAGE_NAME)-tests: $(RELEASE_OTHER_OBJS) $(RELEASE_TEST_O
 $(PROFILE_BIN_DIR)/$(PACKAGE_NAME)-tests: $(PROFILE_OTHER_OBJS) $(PROFILE_TEST_OBJECTS) | $(PROFILE_BIN_DIR)
 	$(call MSG_LD, $@)
 	$Q$(CC) $(CFLAGS) $(PROFILE_FLAGS) $(LDFLAGS) $^ -o $@
-	$(call MSG_SUB, dSYM)
-	$Qdsymutil $@
+	$Qif [ "$(UNAME_S)" = "Darwin" ]; then \
+	    $(call MSG_SUB_INLINE, dSYM); \
+	    dsymutil $@ || true; \
+	fi
 	$(call log_ok, Built profile tests: $@)
 
 

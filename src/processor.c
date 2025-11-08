@@ -51,7 +51,7 @@ static void *timer_thread_func(void *arg) {
       shutdown_requested = 1;
     }
 
-    usleep(SYSTEM_TICK_MS * 1000);
+    // nanosleep(SYSTEM_TICK_MS * 1000000);
 
     ipc_send_completion_messages();
 

@@ -1,3 +1,4 @@
+#define _DEFAULT_SOURCE
 #include "ipc.h"
 #include <errno.h>
 #include <fcntl.h>

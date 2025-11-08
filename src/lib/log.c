@@ -61,7 +61,7 @@ void log_system_init(uint8_t proc_id) {
   ring_buffer_init(&log_queue, LOG_QUEUE_SIZE, log_buffer, log_seq,
                    MAX_LOG_MSG_SIZE);
 
-  log_sem = dispatch_semaphore_create(0);
+  platform_sem_init(&log_sem, 0);
 
   atomic_store(&log_wakeup_pending, 0);
 

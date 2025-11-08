@@ -170,9 +170,6 @@ unsigned int test_run_all(const char *filter) {
     test_run_suite(suites[i], filter);
   }
 #else
-  extern struct test_suite *__start_test_suites[];
-  extern struct test_suite *__stop_test_suites[];
-
   for (struct test_suite **suite = __start_test_suites;
        suite < __stop_test_suites; ++suite) {
     test_run_suite(*suite, filter);

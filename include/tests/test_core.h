@@ -63,11 +63,15 @@ struct test_suite {
 #define TEST_SECTION "__DATA,test_suites"
 #else
 #define TEST_SECTION "test_suites"
+
+extern test_suite *__start_test_suites[];
+extern test_suite *__stop_test_suites[];
+
 #endif
 
 #define REGISTER_SUITE(suite_name)                                             \
   __attribute__((no_sanitize("address"), used, aligned(8),                     \
-                 section("__DATA,test_suites"))) static struct test_suite      \
+                 section(TEST_SECTION))) static struct test_suite              \
       *__test_suite_##suite_name = &(suite_name);
 
 #endif

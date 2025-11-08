@@ -78,7 +78,7 @@ void log_system_shutdown(void);
       }                                                                        \
       if (ring_buffer_try_enqueue(&log_queue, msg_buf) == 0) {                 \
         if (atomic_exchange(&log_wakeup_pending, 1) == 0) {                    \
-          dispatch_semaphore_signal(log_sem);                                  \
+          platform_sem_post(&log_sem);                                         \
         }                                                                      \
       }                                                                        \
     }                                                                          \

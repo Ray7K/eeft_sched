@@ -471,7 +471,7 @@ def generate_task_config_c(allocator: Allocator):
             f"        .period = {t.period},\n"
             f"        .deadline = {t.deadline},\n"
             f"        .wcet = {wcet_str},\n"
-            f"        .criticality_level = {t.criticality_str},\n"
+            f"        .crit_level = {t.criticality_str},\n"
             f"        .num_replicas = {t.replicas}\n"
             f"    }}"
         )
@@ -511,13 +511,13 @@ def generate_task_config_c(allocator: Allocator):
 const task_struct system_tasks[] = {{
 {task_definitions_str}
 }};
-const uint32_t SYSTEM_TASKS_SIZE = sizeof(system_tasks) / sizeof(task);
+const uint32_t SYSTEM_TASKS_SIZE = sizeof(system_tasks) / sizeof(task_struct);
 
 // Definitions for the offline-calculated task allocation map.
-const task_allocation_map allocation_map[] = {{
+const task_alloc_map allocation_map[] = {{
 {map_entries_str}
 }};
-const uint32_t ALLOCATION_MAP_SIZE = sizeof(allocation_map) / sizeof(task_allocation_map);
+const uint32_t ALLOCATION_MAP_SIZE = sizeof(allocation_map) / sizeof(task_alloc_map);
 """
     with open(OUTPUT_C_TASK_ALLOC_PATH, "w") as f:
         f.write(c_content)
