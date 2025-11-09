@@ -182,5 +182,5 @@ unsigned int test_run_all(const char *filter) {
                      "Skipped: %u\n" COLOR_RESET,
           total_tests, passed_tests, failed_tests, skipped_tests);
 
-  return failed_tests ? -1 : 0;
+  return failed_tests;
 }
