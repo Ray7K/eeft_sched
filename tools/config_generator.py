@@ -79,7 +79,11 @@ class Core:
 
         mods = []
         periods = [t.period for t in all_candidates]
+
+        HYPERPERIOD_CAP_MULT = 100
         hyperperiod = math.lcm(*periods)
+        hyperperiod = min(hyperperiod, max(periods) * HYPERPERIOD_CAP_MULT)
+
         m = crit_num
         m_prime = crit_num + 1
 
@@ -288,6 +292,7 @@ class Allocator:
             for proc_id in range(num_procs)
         ]
         self.num_procs_estimate = self._calculate_num_proc_estimate()
+        self.next_proc_index = 0
 
     def _sort_tasks(self) -> list:
         crit_levels_high_to_low = sorted(
@@ -336,11 +341,14 @@ class Allocator:
         return None
 
     def allocate_primary(self, task):
-        for proc_id in range(self.num_procs_estimate):
+        start = self.next_proc_index
+        for offset in range(self.num_procs_estimate):
+            proc_id = (start + offset) % self.num_procs_estimate
             proc = self.processors[proc_id]
             for core in proc.cores:
                 if core.can_tune_system(task) and not core.assigned_primaries:
                     core.tune_system(copy.deepcopy(task), TaskType.Primary)
+                    self.next_proc_index = (proc_id + 1) % self.num_procs_estimate
                     return True
 
         min_num_of_primaries = float("inf")
@@ -359,6 +367,7 @@ class Allocator:
 
         if chosen_core and chosen_proc:
             chosen_core.tune_system(copy.deepcopy(task), TaskType.Primary)
+            self.next_proc_index = (chosen_proc.id + 1) % self.num_procs_estimate
             return True
 
         return False
@@ -390,6 +399,7 @@ class Allocator:
     def allocate_tasks(self, taskset):
         for task in taskset:
             while not self.allocate_primary(task):
+                print(f"trying to allocate {task.id}")
                 self.num_procs_estimate += 1
 
                 if (
@@ -414,6 +424,8 @@ class Allocator:
         sorted_tasks = self._sort_tasks()
 
         for taskset in sorted_tasks:
+            if not taskset:
+                continue
             print("Allocating tasks of criticality level:", taskset[0].criticality_str)
             self.allocate_tasks(taskset)
 
@@ -500,7 +512,6 @@ def generate_task_config_c(allocator: Allocator):
     map_entries_str = ",\n".join(map_entries)
     c_content = f"""#include "task_alloc.h"
 #include "sys_config.h"
-#include "task_alloc.h"
 #include "task_management.h"
 #include <stdint.h>
 
