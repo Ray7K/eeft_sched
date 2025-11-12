@@ -37,9 +37,7 @@ float generate_acet(job_struct *job) {
     criticality_level = proc_state.system_criticality_level;
   }
 
-  criticality_level = 0;
-
-  float acet = rand_between(0.9f, 0.9f) *
+  float acet = rand_between(0.1f, 1.0f) *
                (float)job->parent_task->wcet[criticality_level];
 
   return acet;
