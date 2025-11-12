@@ -6,10 +6,6 @@
 
 extern const task_struct *task_lookup[MAX_TASKS + 1];
 
-static inline float rand_between(float min, float max) {
-  return min + (float)rand() / (float)RAND_MAX * (max - min);
-}
-
 static inline const task_struct *find_task_by_id(uint32_t task_id) {
   if (task_id > MAX_TASKS)
     return NULL;
@@ -20,8 +16,10 @@ float generate_acet(job_struct *job);
 
 uint32_t find_next_effective_arrival_time(uint8_t core_id);
 
+uint32_t calculate_allocated_horizon(uint8_t core_id);
+
 float find_slack(uint8_t core_id, criticality_level crit_lvl, uint32_t tstart,
-                 uint32_t tend, float scaling_factor);
+                 float scaling_factor, const job_struct *extra_job);
 
 bool is_admissible(uint8_t core_id, job_struct *candidate_job);
 

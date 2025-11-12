@@ -452,6 +452,7 @@ void scheduler_init(void) {
 
     core_states[i].local_criticality_level = QM;
     core_states[i].decision_point = false;
+    core_states[i].cached_slack_horizon = calculate_allocated_horizon(i);
   }
 
   init_migration();
@@ -504,22 +505,21 @@ void scheduler_tick(uint8_t core_id) {
 
   handle_running_job(core_id);
 
-  // Ready/Rep/Discard/Pending/Bid Queue
+  remove_completed_jobs(core_id);
+
+  handle_job_arrivals(core_id);
+
   handle_offer_cleanup(core_id);
 
   process_award_notifications(core_id);
 
-  handle_job_arrivals(core_id);
-
   reclaim_discarded_jobs(core_id);
-
-  remove_completed_jobs(core_id);
-
-  job_struct *next_job = select_next_job(core_id);
 
   attempt_migration_push(core_id);
 
   participate_in_auctions(core_id);
+
+  job_struct *next_job = select_next_job(core_id);
 
   if (next_job != NULL) {
     core_state->decision_point = true;

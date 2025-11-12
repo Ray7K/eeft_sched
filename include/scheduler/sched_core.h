@@ -26,6 +26,8 @@ typedef struct {
 
   uint32_t next_dpm_eligible_tick;
 
+  uint32_t cached_slack_horizon;
+
   dpm_control_block dpm_control_block;
 
   bool is_idle;

@@ -31,84 +31,42 @@ float power_get_current_scaling_factor(uint8_t core_id) {
 
 uint8_t calc_required_dvfs_level(uint8_t core_id) {
   CoreState *core_state = &core_states[core_id];
-  if (core_state->is_idle || core_state->running_job == NULL) {
-    return NUM_DVFS_LEVELS - 1;
-  }
+  if (core_state->is_idle || core_state->running_job == NULL)
+    return NUM_DVFS_LEVELS - 1; // lowest power state
 
+  uint32_t now = proc_state.system_time;
   float min_slack = FLT_MAX;
+
   for (uint8_t crit_lvl = core_state->local_criticality_level;
        crit_lvl < MAX_CRITICALITY_LEVELS; crit_lvl++) {
-
-    float remaining_wcet =
-        (float)core_state->running_job->parent_task->wcet[crit_lvl] -
-        core_state->running_job->executed_time;
-    uint32_t virtual_deadline =
-        core_state->running_job->arrival_time +
-        core_state->running_job->relative_tuned_deadlines[crit_lvl];
-
-    float running_job_slack =
-        (float)(virtual_deadline - proc_state.system_time) - remaining_wcet;
-
-    min_slack = running_job_slack < min_slack ? running_job_slack : min_slack;
-
-    job_struct *cur;
-
-    uint32_t tstart = proc_state.system_time;
-    list_for_each_entry(cur, &core_state->ready_queue, link) {
-      uint32_t tend =
-          cur->arrival_time + cur->relative_tuned_deadlines[crit_lvl];
-
-      float slack = find_slack(core_id, crit_lvl, tstart, tend, 1.0f);
-      if (slack < min_slack)
-        min_slack = slack;
-    }
-    list_for_each_entry(cur, &core_state->replica_queue, link) {
-      uint32_t tend =
-          cur->arrival_time + cur->relative_tuned_deadlines[crit_lvl];
-
-      float slack = find_slack(core_id, crit_lvl, tstart, tend, 1.0f);
-      if (slack < min_slack)
-        min_slack = slack;
-    }
-    list_for_each_entry(cur, &core_state->pending_jobs_queue, link) {
-      uint32_t tend =
-          cur->arrival_time + cur->relative_tuned_deadlines[crit_lvl];
-      float slack = find_slack(core_id, crit_lvl, tstart, tend, 1.0f);
-      if (slack < min_slack)
-        min_slack = slack;
-    }
-    bid_entry *be;
-    list_for_each_entry(be, &core_state->bid_history_queue, link) {
-      cur = be->bidded_job;
-      uint32_t tend =
-          cur->arrival_time + cur->relative_tuned_deadlines[crit_lvl];
-      float slack = find_slack(core_id, crit_lvl, tstart, tend, 1.0f);
-      if (slack < min_slack)
-        min_slack = slack;
-    }
-
-    if (min_slack < 0) {
-      return 0;
+    float slack = find_slack(core_id, crit_lvl, now, 1.0f, NULL);
+    if (slack < min_slack) {
+      min_slack = slack;
     }
   }
 
-  float worst_remaining_wcet = (float)core_state->running_job->parent_task
-                                   ->wcet[MAX_CRITICALITY_LEVELS - 1] -
-                               core_state->running_job->executed_time;
+  if (min_slack <= 0.0f) {
+    return 0;
+  }
 
-  int8_t dvfs_level = 0; // Default to highest speed
+  float remaining_hi = (float)core_state->running_job->parent_task
+                           ->wcet[MAX_CRITICALITY_LEVELS - 1] -
+                       core_state->running_job->executed_time;
+
+  int8_t best_level = 0;
+
   for (int8_t i = 0; i < NUM_DVFS_LEVELS; i++) {
-    float scaling_factor = dvfs_levels[i].scaling_factor;
-    float extra_time_needed =
-        (worst_remaining_wcet / scaling_factor) - worst_remaining_wcet;
+    float scale = dvfs_levels[i].scaling_factor;
+    float added_time = (remaining_hi / scale) - remaining_hi;
 
-    if (extra_time_needed > min_slack) {
+    if (added_time <= min_slack) {
+      best_level = i;
+    } else {
       break;
     }
-    dvfs_level = i;
   }
 
-  return dvfs_level;
+  return best_level;
 }
 
 void power_set_dvfs_level(uint8_t core_id, uint8_t level_idx) {
