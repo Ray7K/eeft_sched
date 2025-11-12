@@ -1,12 +1,12 @@
 # pyright: basic
 
 """
-tools/generate_tasks.py
+tools/taskset_generator.py
 
 Generate mixed-criticality periodic tasksets and write config/tasks.yaml (or batch files).
 
 Usage example:
-  python tools/generate_tasks.py --config config/system_config.yaml \
+  python tools/taskset_generator.py --config config/system_config.yaml \
       --num-tasks 40 --avg-util 0.25 --replica-mean 1.5 --seed 42 \
       --period-min 10 --period-max 200 --period-mode loguniform \
       --crit-dist '{"ASIL_D":0.2,"ASIL_C":0.25,"ASIL_B":0.3,"ASIL_A":0.15,"QM":0.1}' \
@@ -76,7 +76,7 @@ def load_system_config(path: str) -> dict:
 def write_yaml_with_metadata(payload: dict, outfile: str, metadata: dict) -> None:
     head_comments = [
         f"# Generated: {datetime.now(timezone.utc).isoformat()}Z",
-        f"# generator: generate_tasks.py",
+        f"# generator: taskset_generator.py",
         f"# metadata: {json.dumps(metadata, sort_keys=True)}",
         "",
     ]
@@ -319,6 +319,16 @@ def generate_single_task(
 
 def generate_taskset(sys_cfg: dict, args: GenArgs) -> dict:
     crit_levels = list(sys_cfg["criticality_levels"]["levels"].keys())
+
+    if args.num_tasks > sys_cfg["system"]["max_tasks"]:
+        print(
+            f"Error: requested {args.num_tasks} tasks exceeds system limit "
+            f"({sys_cfg['system']['max_tasks']}).\n"
+            "Please increase max_tasks in system_config.yaml or regenerate sys_config.h.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     max_levels = sys_cfg["criticality_levels"]["max_levels"]
     crit_dist = (
         normalize_weights(args.crit_dist)
@@ -434,9 +444,13 @@ def print_summary(taskset: dict, sys_cfg: dict):
     print(f"Avg effective util (including replicas): {avg_util_total:.3f}")
     print(f"Total system utilization (primaries only): {util_sum_primary:.3f}")
     print(f"Total system utilization (including replicas): {util_sum_total:.3f}")
+
     print("Criticality distribution:")
-    for k, v in sorted(crit_counts.items(), key=lambda kv: kv[0], reverse=True):
-        print(f"  {k}: {v}")
+    # Use canonical order from system config
+    ordered_levels = list(sys_cfg["criticality_levels"]["levels"].keys())
+    for level in ordered_levels:
+        if level in crit_counts:
+            print(f"  {level}: {crit_counts[level]}")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -609,7 +623,7 @@ def main(argv=None):
 
     if args.crit_dist is None:
         levels = sys_cfg["criticality_levels"]["levels"]
-        args.crit_dist = {k: 1.0 for k in levels.keys()}
+        args.crit_dist = {k: 1.0 / (1 + v) for k, v in levels.items()}
 
     for set_idx in range(1, args.num_sets + 1):
         taskset = generate_taskset(sys_cfg, args)
