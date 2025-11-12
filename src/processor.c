@@ -105,7 +105,7 @@ void processor_init(uint8_t proc_id) {
   proc_state.processor_id = proc_id;
   INIT_LIST_HEAD(&proc_state.discard_queue);
   pthread_mutex_init(&proc_state.discard_queue_lock, NULL);
-  atomic_store(&proc_state.system_criticality_level, QM);
+  atomic_store(&proc_state.system_criticality_level, 0);
 
   // Initialize barrier to wait for all cores + the timer thread.
   barrier_init(&proc_state.core_completion_barrier, NUM_CORES_PER_PROC + 1, 0);

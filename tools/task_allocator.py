@@ -755,7 +755,7 @@ def generate_reports(allocator: Allocator):
 # --- Main Execution ---
 def main():
     global sys_config
-    print("--- Configuration Generator ---")
+    print("--- Task Allocator ---")
 
     # 1. Parse YAML files
     with open(SYS_CONFIG_PATH, "r") as f:
@@ -774,14 +774,15 @@ def main():
     # 3. Perform allocation
     allocator = Allocator(sys_config, [Task(t, sys_config) for t in tasks])
     allocator.run()
+    print("Allocation complete")
 
     # 4. Generate task_config.h and task_config.c
     generate_task_config_c(allocator)
+    print("C source/header files generation complete")
 
     # 5. Reporting and Visualization
     generate_reports(allocator)
-
-    print("--- Generation Complete ---")
+    print("Report generation complete")
 
 
 if __name__ == "__main__":

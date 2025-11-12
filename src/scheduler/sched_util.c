@@ -17,28 +17,19 @@
 #define MAX_DEADLINES (MAX_TASKS * 64)
 
 float generate_acet(job_struct *job) {
-  uint8_t criticality_chance = rand() % 100;
+  const float bias_factor = 2.0f; // >1 biases toward lower criticalities
+  uint8_t max_lvl = MAX_CRITICALITY_LEVELS - 1;
 
-  criticality_level criticality_level = job->parent_task->crit_level;
+  float r = rand_between(0.0f, 1.0f);
 
-  if (criticality_chance < 1) {
-    criticality_level = ASIL_D;
-  } else if (criticality_chance < 5) {
-    criticality_level = ASIL_C;
-  } else if (criticality_chance < 15) {
-    criticality_level = ASIL_B;
-  } else if (criticality_chance < 30) {
-    criticality_level = ASIL_A;
-  } else {
-    criticality_level = QM;
-  }
+  uint8_t crit = (uint8_t)((float)max_lvl * powf(r, bias_factor));
 
-  if (criticality_level < proc_state.system_criticality_level) {
-    criticality_level = proc_state.system_criticality_level;
-  }
+  if (crit < proc_state.system_criticality_level)
+    crit = proc_state.system_criticality_level;
 
-  float acet = rand_between(0.1f, 1.0f) *
-               (float)job->parent_task->wcet[criticality_level];
+  float acet_fraction = rand_between(0.1f, 1.0f);
+
+  float acet = acet_fraction * (float)job->parent_task->wcet[crit];
 
   return acet;
 }

@@ -450,7 +450,7 @@ void scheduler_init(void) {
                      MAX_CONCURRENT_OFFERS, core_states[i].award_buf,
                      core_states[i].seq, sizeof(job_struct *));
 
-    core_states[i].local_criticality_level = QM;
+    core_states[i].local_criticality_level = 0;
     core_states[i].decision_point = false;
     core_states[i].cached_slack_horizon = calculate_allocated_horizon(i);
   }
