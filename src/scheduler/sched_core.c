@@ -21,12 +21,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-CoreState core_states[NUM_CORES_PER_PROC];
+core_state core_states[NUM_CORES_PER_PROC];
 
 const task_struct *task_lookup[MAX_TASKS + 1];
 
 static void handle_job_completion(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   core_state->decision_point = true;
   job_struct *completed_job = core_state->running_job;
 
@@ -52,7 +52,7 @@ static void handle_job_completion(uint8_t core_id) {
 }
 
 static void remove_completed_jobs(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   completion_message *incoming_msg;
   ring_buffer *incoming_queue = &proc_state.incoming_completion_msg_queue;
   ring_buffer_iter_read_unsafe(incoming_queue, incoming_msg) {
@@ -94,7 +94,7 @@ static void remove_completed_jobs(uint8_t core_id) {
 
 static void handle_mode_change(uint8_t core_id,
                                criticality_level new_criticality_level) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   core_state->decision_point = true;
 
   atomic_store(&proc_state.system_criticality_level, new_criticality_level);
@@ -163,7 +163,7 @@ static void handle_mode_change(uint8_t core_id,
 }
 
 static void handle_job_arrivals(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   job_struct *new_job, *next;
   list_for_each_entry_safe(new_job, next, &core_state->pending_jobs_queue,
@@ -286,7 +286,7 @@ static void handle_job_arrivals(uint8_t core_id) {
 }
 
 static void handle_running_job(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   if (core_state->running_job != NULL) {
     core_state->running_job->executed_time +=
@@ -325,7 +325,7 @@ static void handle_running_job(uint8_t core_id) {
 }
 
 static job_struct *select_next_job(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   bool from_ready_queue = false;
 
   job_struct *next_job_candidate;
@@ -364,7 +364,7 @@ static job_struct *select_next_job(uint8_t core_id) {
 }
 
 static void dispatch_job(uint8_t core_id, job_struct *job_to_dispatch) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   if (core_state->running_job != NULL) {
     job_struct *current_job = core_state->running_job;
@@ -384,7 +384,7 @@ static void dispatch_job(uint8_t core_id, job_struct *job_to_dispatch) {
 }
 
 static void reclaim_discarded_jobs(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   while (!list_empty(&core_state->discard_list)) {
     job_struct *discarded_job = pop_next_job(&core_state->discard_list);
@@ -465,7 +465,7 @@ void scheduler_init(void) {
 }
 
 static inline void log_core_state(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   if (core_state->is_idle) {
     LOG(LOG_LEVEL_DEBUG, "Status: IDLE");
@@ -486,7 +486,7 @@ static inline void log_core_state(uint8_t core_id) {
 }
 
 void scheduler_tick(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   if (core_state->local_criticality_level !=
       atomic_load(&proc_state.system_criticality_level)) {

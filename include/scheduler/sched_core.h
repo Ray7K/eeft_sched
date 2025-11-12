@@ -41,12 +41,12 @@ typedef struct {
 
   bool decision_point;
 
-} CoreState;
+} core_state;
 
 void scheduler_init(void);
 
 void scheduler_tick(uint8_t core_id);
 
-extern CoreState core_states[NUM_CORES_PER_PROC];
+extern core_state core_states[NUM_CORES_PER_PROC];
 
 #endif

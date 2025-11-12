@@ -159,7 +159,7 @@ static inline void add_delegation_sorted(DelegatedJob *dj, uint8_t core_id) {
 }
 
 static inline void handle_light_donor_push(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   job_struct *job;
   uint32_t num_offers_sent = 0;
@@ -258,7 +258,7 @@ static inline void handle_light_donor_push(uint8_t core_id) {
 }
 
 static inline void handle_idle_donor_push(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   uint8_t num_offers = 0;
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
@@ -382,7 +382,7 @@ static inline void handle_idle_donor_push(uint8_t core_id) {
 
 void attempt_migration_push(uint8_t core_id) {
 
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   float util = get_util(core_id);
 
   if (core_state->is_idle &&
@@ -398,7 +398,7 @@ void attempt_migration_push(uint8_t core_id) {
 #define UTIL_UPPER_CAP 0.85f
 
 void participate_in_auctions(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   if (core_state->is_idle) {
     return;
@@ -471,7 +471,7 @@ void participate_in_auctions(uint8_t core_id) {
 }
 
 void handle_offer_cleanup(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   Offer *cur, *next;
   pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
@@ -581,7 +581,7 @@ void handle_offer_cleanup(uint8_t core_id) {
 }
 
 void process_award_notifications(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   job_struct *awarded_job;
   while (ring_buffer_try_dequeue(&core_state->award_notification_queue,

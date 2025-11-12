@@ -32,7 +32,7 @@ float power_get_current_scaling_factor(uint8_t core_id) {
 }
 
 uint8_t calc_required_dvfs_level(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   if (core_state->is_idle || core_state->running_job == NULL)
     return NUM_DVFS_LEVELS - 1; // lowest power state
 
@@ -86,7 +86,7 @@ uint8_t power_get_current_dvfs_level(uint8_t core_id) {
 
 void power_management_set_dpm_interval(uint8_t core_id,
                                        uint32_t next_arrival_time) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   uint32_t now = proc_state.system_time;
 
   if (!core_state->is_idle)

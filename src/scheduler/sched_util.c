@@ -46,7 +46,7 @@ float generate_acet(job_struct *job) {
 }
 
 uint32_t calculate_allocated_horizon(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   uint32_t horizon = 0;
 
@@ -75,7 +75,7 @@ uint32_t calculate_allocated_horizon(uint8_t core_id) {
 }
 
 static uint32_t calculate_horizon(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   uint32_t horizon = core_state->cached_slack_horizon;
 
@@ -143,7 +143,7 @@ static uint32_t collect_active_and_future_deadlines(
     return 0;
   }
 
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   uint32_t count = 0;
   uint32_t horizon = calculate_horizon(core_id);
 
@@ -246,7 +246,7 @@ float find_slack(uint8_t core_id, criticality_level crit_lvl, uint32_t tstart,
   if (scaling_factor <= 0.0f)
     scaling_factor = 1.0f;
 
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   const uint32_t current_time = proc_state.system_time;
   tstart = tstart > current_time ? tstart : current_time;
 
@@ -379,7 +379,7 @@ float find_slack(uint8_t core_id, criticality_level crit_lvl, uint32_t tstart,
 }
 
 uint32_t find_next_effective_arrival_time(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   uint32_t min_arrival_time = UINT32_MAX;
 
   job_struct *pending;
@@ -430,7 +430,7 @@ uint32_t find_next_effective_arrival_time(uint8_t core_id) {
 }
 
 bool is_admissible(uint8_t core_id, job_struct *candidate_job) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
   uint32_t tstart = candidate_job->arrival_time;
   float scaling = 1.0f;
 
@@ -462,7 +462,7 @@ bool is_admissible(uint8_t core_id, job_struct *candidate_job) {
 }
 
 float get_util(uint8_t core_id) {
-  CoreState *core_state = &core_states[core_id];
+  core_state *core_state = &core_states[core_id];
 
   float util = 0.0f;
 
