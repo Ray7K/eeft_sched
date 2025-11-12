@@ -1,5 +1,5 @@
-#ifndef BARRIER_H
-#define BARRIER_H
+#ifndef LIB_BARRIER_H
+#define LIB_BARRIER_H
 
 #include <errno.h>
 #include <pthread.h>

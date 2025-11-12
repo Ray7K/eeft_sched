@@ -1,4 +1,5 @@
 #include "lib/barrier.h"
+
 #include <errno.h>
 
 int barrier_init(barrier *barrier, unsigned n, int pshared) {

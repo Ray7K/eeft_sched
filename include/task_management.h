@@ -1,9 +1,11 @@
 #ifndef TASK_MANAGEMENT_H
 #define TASK_MANAGEMENT_H
 
+#include "sys_config.h"
+
 #include "lib/list.h"
 #include "lib/log.h"
-#include "sys_config.h"
+
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>

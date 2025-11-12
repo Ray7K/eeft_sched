@@ -1,5 +1,5 @@
-#ifndef RING_BUFFER_H
-#define RING_BUFFER_H
+#ifndef LIB_RING_BUFFER_H
+#define LIB_RING_BUFFER_H
 
 #include <errno.h>
 #include <stdatomic.h>

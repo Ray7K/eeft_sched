@@ -1,10 +1,12 @@
 #ifndef PROCESSOR_H
 #define PROCESSOR_H
 
+#include "sys_config.h"
+
 #include "lib/barrier.h"
 #include "lib/list.h"
 #include "lib/ring_buffer.h"
-#include "sys_config.h"
+
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>

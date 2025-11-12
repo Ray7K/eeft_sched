@@ -1,8 +1,9 @@
+#include "processor.h"
+
 #include "lib/log.h"
 #include "lib/platform_sem.h"
 #include "lib/ring_buffer.h"
 
-#include "processor.h"
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdatomic.h>

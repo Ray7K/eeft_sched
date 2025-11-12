@@ -1,7 +1,8 @@
-#include "lib/barrier.h"
-#include "lib/ring_buffer.h"
 #include "tests/test_assert.h"
 #include "tests/test_core.h"
+
+#include "lib/barrier.h"
+#include "lib/ring_buffer.h"
 
 #include <pthread.h>
 #include <stdatomic.h>

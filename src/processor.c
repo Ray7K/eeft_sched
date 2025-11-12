@@ -1,9 +1,12 @@
 #include "processor.h"
 #include "ipc.h"
+#include "sys_config.h"
+
 #include "lib/list.h"
 #include "lib/log.h"
+
 #include "scheduler/sched_core.h"
-#include "sys_config.h"
+
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -16,7 +19,7 @@ barrier *proc_barrier __attribute__((weak)) = NULL;
 
 static volatile sig_atomic_t shutdown_requested = 0;
 
-#define SYSTEM_TICK_MS 0
+#define SYSTEM_TICK_MS 1
 
 #ifndef TOTAL_TICKS
 #define TOTAL_TICKS 0
@@ -50,8 +53,6 @@ static void *timer_thread_func(void *arg) {
     if (TOTAL_TICKS > 0 && proc_state.system_time >= TOTAL_TICKS) {
       shutdown_requested = 1;
     }
-
-    // nanosleep(SYSTEM_TICK_MS * 1000000);
 
     ipc_send_completion_messages();
 

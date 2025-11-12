@@ -1,5 +1,5 @@
-#ifndef LOG_H
-#define LOG_H
+#ifndef LIB_LOG_H
+#define LIB_LOG_H
 
 #include "lib/platform_sem.h"
 #include "lib/ring_buffer.h"

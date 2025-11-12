@@ -2,6 +2,7 @@
 #define IPC_H
 
 #include "sys_config.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 

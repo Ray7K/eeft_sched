@@ -1,8 +1,8 @@
-#include "lib/barrier.h"
-#include "lib/log.h"
-
 #include "processor.h"
 #include "sys_config.h"
+
+#include "lib/barrier.h"
+#include "lib/log.h"
 
 #include <signal.h>
 #include <stdlib.h>

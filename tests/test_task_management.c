@@ -1,7 +1,9 @@
-#include "lib/list.h"
-#include "task_management.h"
 #include "tests/test_assert.h"
 #include "tests/test_core.h"
+
+#include "task_management.h"
+
+#include "lib/list.h"
 
 #include <pthread.h>
 #include <stdatomic.h>

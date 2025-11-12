@@ -1,6 +1,7 @@
-#include "lib/list.h"
 #include "tests/test_assert.h"
 #include "tests/test_core.h"
+
+#include "lib/list.h"
 
 #include <stdlib.h>
 

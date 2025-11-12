@@ -1,11 +1,13 @@
 #include "power_management.h"
+#include "processor.h"
+#include "sys_config.h"
+
 #include "lib/list.h"
 #include "lib/log.h"
-#include "processor.h"
+
 #include "scheduler/sched_core.h"
-#include "scheduler/sched_migration.h"
 #include "scheduler/sched_util.h"
-#include "sys_config.h"
+
 #include <float.h>
 #include <math.h>
 #include <stdint.h>

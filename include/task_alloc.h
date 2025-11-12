@@ -3,6 +3,7 @@
 
 #include "sys_config.h"
 #include "task_management.h"
+
 #include <stdint.h>
 
 typedef enum { Primary, Replica } TaskType;

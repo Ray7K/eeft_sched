@@ -1,6 +1,7 @@
-#include "lib/barrier.h"
 #include "tests/test_assert.h"
 #include "tests/test_core.h"
+
+#include "lib/barrier.h"
 
 #include <errno.h>
 #include <pthread.h>

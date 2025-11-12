@@ -1,5 +1,5 @@
-#ifndef PLATFORM_SEM_H
-#define PLATFORM_SEM_H
+#ifndef LIB_PLATFORM_SEM_H
+#define LIB_PLATFORM_SEM_H
 
 #if defined(__APPLE__)
 #include <dispatch/dispatch.h>

@@ -1,7 +1,9 @@
 #include "task_management.h"
+#include "sys_config.h"
+
 #include "lib/list.h"
 #include "lib/log.h"
-#include "sys_config.h"
+
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stddef.h>
