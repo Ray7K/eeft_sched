@@ -119,6 +119,24 @@ void add_to_queue_sorted(struct list_head *queue_head, job_struct *job_to_add) {
   list_add(&job_to_add->link, queue_head->prev);
 }
 
+void add_to_queue_sorted_by_arrival(struct list_head *queue_head,
+                                    job_struct *job_to_add) {
+  if (!queue_head || !job_to_add) {
+    LOG(LOG_LEVEL_ERROR, "Attempted to add job to a NULL queue\n");
+    return;
+  }
+
+  job_struct *cursor, *n;
+  list_for_each_entry_safe(cursor, n, queue_head, link) {
+    if (job_to_add->arrival_time < cursor->arrival_time) {
+      list_add(&job_to_add->link, cursor->link.prev);
+      return;
+    }
+  }
+
+  list_add(&job_to_add->link, queue_head->prev);
+}
+
 job_struct *peek_next_job(struct list_head *queue_head) {
   return list_first_entry(queue_head, job_struct, link);
 }

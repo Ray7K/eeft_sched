@@ -1,11 +1,12 @@
 #include "processor.h"
 #include "sys_config.h"
 #include "task_alloc.h"
+#include "task_management.h"
 
 #include "scheduler/sched_core.h"
 #include "scheduler/sched_migration.h"
 #include "scheduler/sched_util.h"
-#include "task_management.h"
+
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -439,11 +440,11 @@ void participate_in_auctions(uint8_t core_id) {
   pthread_mutex_lock(&proc_state.future_job_offer_queue_lock);
   list_for_each_entry_safe(cur, next, &proc_state.future_job_offer_queue,
                            link) {
-    LOG(LOG_LEVEL_DEBUG, "Evaluating future job offer for Job %d",
-        cur->j_copy->parent_task->id);
     if (cur->expiry_time > proc_state.system_time &&
         cur->donor_core_id != core_id) {
       job_struct *candidate = cur->j_copy;
+      LOG(LOG_LEVEL_INFO, "Evaluating future job offer for Job %d",
+          candidate->parent_task->id);
       if (is_admissible(core_id, candidate)) {
         float util = get_util(core_id);
         LOG(LOG_LEVEL_INFO,
@@ -599,7 +600,8 @@ void process_award_notifications(uint8_t core_id) {
           awarded_job->parent_task->id, awarded_job->arrival_time,
           awarded_job->wcet);
 
-      add_to_queue_sorted(&core_state->pending_jobs_queue, awarded_job);
+      add_to_queue_sorted_by_arrival(&core_state->pending_jobs_queue,
+                                     awarded_job);
     } else {
       core_state->decision_point = true;
       awarded_job->state = JOB_STATE_READY;

@@ -77,6 +77,8 @@ void task_management_init(void);
 job_struct *create_job(const task_struct *parent_task, uint8_t core_id);
 job_struct *clone_job(const job_struct *job, uint8_t core_id);
 void add_to_queue_sorted(struct list_head *queue_head, job_struct *job_to_add);
+void add_to_queue_sorted_by_arrival(struct list_head *queue_head,
+                                    job_struct *job_to_add);
 job_struct *peek_next_job(struct list_head *queue_head);
 job_struct *pop_next_job(struct list_head *queue_head);
 void remove_job_with_parent_task_id(struct list_head *queue_head,
