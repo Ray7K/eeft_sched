@@ -211,7 +211,7 @@ static void handle_job_arrivals(uint8_t core_id) {
         continue;
       }
 
-      DelegatedJob *dj, *tmp;
+      delegated_job *dj, *tmp;
       bool delegated = false;
       list_for_each_entry_safe(dj, tmp, &core_state->delegated_job_queue,
                                link) {

@@ -26,18 +26,18 @@ typedef struct {
   uint8_t best_bidder_id;
 
   struct list_head link;
-} Offer;
+} offer;
 
 typedef struct {
   struct list_head link;
   uint32_t arrival_tick;
   uint32_t task_id;
   bool owned_by_remote;
-} DelegatedJob;
+} delegated_job;
 
 void init_migration(void);
 void remove_expired_bid_entries(uint8_t core_id);
-void release_delegation(DelegatedJob *dj, uint8_t core_id);
+void release_delegation(delegated_job *dj, uint8_t core_id);
 
 void attempt_migration_push(uint8_t core_id);
 void participate_in_auctions(uint8_t core_id);

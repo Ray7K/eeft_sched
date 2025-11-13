@@ -397,7 +397,7 @@ uint32_t find_next_effective_arrival_time(uint8_t core_id) {
                                 : current_time + (task->period - remainder);
 
     struct list_head *deleg_list = &core_state->delegated_job_queue;
-    DelegatedJob *dj;
+    delegated_job *dj;
 
     list_for_each_entry(dj, deleg_list, link) {
       if (dj->arrival_tick < next_arrival)

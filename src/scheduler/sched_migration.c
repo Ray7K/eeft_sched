@@ -13,11 +13,11 @@
 static bid_entry bid_entries[NUM_CORES_PER_PROC][MAX_CONCURRENT_OFFERS];
 static struct list_head bid_entry_free_list[NUM_CORES_PER_PROC];
 
-static DelegatedJob delegated_jobs_pool[NUM_CORES_PER_PROC]
-                                       [MAX_FUTURE_DELEGATIONS];
+static delegated_job delegated_jobs_pool[NUM_CORES_PER_PROC]
+                                        [MAX_FUTURE_DELEGATIONS];
 static struct list_head delegated_jobs_free_list[NUM_CORES_PER_PROC];
 
-static Offer offer_pool[MAX_CONCURRENT_OFFERS];
+static offer offer_pool[MAX_CONCURRENT_OFFERS];
 struct list_head offer_free_list;
 
 pthread_mutex_t offer_free_list_lock;
@@ -100,18 +100,18 @@ static inline void add_bid_entry_sorted(bid_entry *new_entry, uint8_t core_id) {
   list_add(&new_entry->link, &core_states[core_id].bid_history_queue);
 }
 
-static inline Offer *create_offer(void) {
-  Offer *offer = NULL;
+static inline offer *create_offer(void) {
+  offer *ofr = NULL;
   pthread_mutex_lock(&offer_free_list_lock);
   if (!list_empty(&offer_free_list)) {
-    offer = list_first_entry(&offer_free_list, Offer, link);
-    list_del(&offer->link);
+    ofr = list_first_entry(&offer_free_list, offer, link);
+    list_del(&ofr->link);
   }
   pthread_mutex_unlock(&offer_free_list_lock);
-  return offer;
+  return ofr;
 }
 
-static inline void release_offer(Offer *offer) {
+static inline void release_offer(offer *offer) {
   if (offer == NULL) {
     return;
   }
@@ -121,17 +121,17 @@ static inline void release_offer(Offer *offer) {
   pthread_mutex_unlock(&offer_free_list_lock);
 }
 
-static inline DelegatedJob *create_delegation(uint8_t core_id) {
+static inline delegated_job *create_delegation(uint8_t core_id) {
   if (list_empty(&delegated_jobs_free_list[core_id])) {
     return NULL;
   }
-  DelegatedJob *dj =
-      list_first_entry(&delegated_jobs_free_list[core_id], DelegatedJob, link);
+  delegated_job *dj =
+      list_first_entry(&delegated_jobs_free_list[core_id], delegated_job, link);
   list_del(&dj->link);
   return dj;
 }
 
-static inline void __release_delegation(DelegatedJob *dj, uint8_t core_id) {
+static inline void __release_delegation(delegated_job *dj, uint8_t core_id) {
   if (dj == NULL)
     return;
 
@@ -140,12 +140,12 @@ static inline void __release_delegation(DelegatedJob *dj, uint8_t core_id) {
   list_add(&dj->link, &delegated_jobs_free_list[core_id]);
 }
 
-void release_delegation(DelegatedJob *dj, uint8_t core_id) {
+void release_delegation(delegated_job *dj, uint8_t core_id) {
   __release_delegation(dj, core_id);
 }
 
-static inline void add_delegation_sorted(DelegatedJob *dj, uint8_t core_id) {
-  DelegatedJob *cursor, *n;
+static inline void add_delegation_sorted(delegated_job *dj, uint8_t core_id) {
+  delegated_job *cursor, *n;
 
   list_for_each_entry_safe(cursor, n, &core_states[core_id].delegated_job_queue,
                            link) {
@@ -183,7 +183,7 @@ static inline void handle_light_donor_push(uint8_t core_id) {
     cloned_job->virtual_deadline = cloned_job->actual_deadline;
     cloned_job->arrival_time = proc_state.system_time + 2;
 
-    Offer *offer = create_offer();
+    offer *offer = create_offer();
     if (offer == NULL) {
       LOG(LOG_LEVEL_WARN, "No available offer slots");
       atomic_store_explicit(&job->is_being_offered, false,
@@ -226,7 +226,7 @@ static inline void handle_light_donor_push(uint8_t core_id) {
     }
     cloned_job->virtual_deadline = cloned_job->actual_deadline;
 
-    Offer *offer = create_offer();
+    offer *offer = create_offer();
     if (offer == NULL) {
       LOG(LOG_LEVEL_WARN, "No available offer slots");
       atomic_store_explicit(&job->is_being_offered, false,
@@ -284,7 +284,7 @@ static inline void handle_idle_donor_push(uint8_t core_id) {
         continue;
       }
 
-      DelegatedJob *dj;
+      delegated_job *dj;
       list_for_each_entry(dj, &core_state->delegated_job_queue, link) {
         if (dj->task_id == task->id && dj->arrival_tick == arrival_time) {
           goto skip;
@@ -319,7 +319,7 @@ static inline void handle_idle_donor_push(uint8_t core_id) {
       new_job->is_replica = (instance->task_type == Replica);
       new_job->state = JOB_STATE_IDLE;
 
-      Offer *offer = create_offer();
+      offer *offer = create_offer();
 
       if (offer == NULL) {
         LOG(LOG_LEVEL_WARN, "No available offer slots");
@@ -405,7 +405,7 @@ void participate_in_auctions(uint8_t core_id) {
   }
 
   pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
-  Offer *cur, *next;
+  offer *cur, *next;
   list_for_each_entry_safe(cur, next, &proc_state.ready_job_offer_queue, link) {
     if (cur->expiry_time > proc_state.system_time &&
         cur->donor_core_id != core_id) {
@@ -473,7 +473,7 @@ void participate_in_auctions(uint8_t core_id) {
 void handle_offer_cleanup(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
 
-  Offer *cur, *next;
+  offer *cur, *next;
   pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
   list_for_each_entry_safe(cur, next, &proc_state.ready_job_offer_queue, link) {
     if (cur->expiry_time <= proc_state.system_time &&
@@ -556,7 +556,7 @@ void handle_offer_cleanup(uint8_t core_id) {
         core_state->next_migration_allowed_tick =
             proc_state.system_time + MIGRATION_COOLDOWN_TICKS;
 
-        DelegatedJob *dj = create_delegation(core_id);
+        delegated_job *dj = create_delegation(core_id);
         if (!dj) {
           LOG(LOG_LEVEL_WARN,
               "Delegation pool exhausted, cannot track delegation");
