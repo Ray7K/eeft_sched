@@ -9,7 +9,8 @@ CC = clang
 CFLAGS = -Wall -Wextra -std=c11 -Iinclude -pthread -MMD -MP
 
 CFLAGS += -Wvla -Wfloat-equal -Wshadow -Wpointer-arith -Wno-cast-align \
-          -Wstrict-prototypes -Wmissing-prototypes -Wreturn-type
+          -Wstrict-prototypes -Wmissing-prototypes -Wreturn-type -D_DEFAULT_SOURCE
+
 
 LDFLAGS = -pthread
 

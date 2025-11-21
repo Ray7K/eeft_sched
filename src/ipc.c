@@ -1,6 +1,5 @@
 #include "ipc.h"
 
-#define _DEFAULT_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <memory.h>
