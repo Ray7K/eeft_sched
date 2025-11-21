@@ -1,14 +1,18 @@
+# build / tool outputs
 config/
-
 .cache/
-
-target/*
+target/
+.venv/
 
 # exclude generated header and source files
 include/sys_config.h
 src/task_alloc.c
 
 # exclude editor backup and swap files
-*.vim
+*.swp
+*.swo
+*.swm
+[Ss]ession.vim
 
+# misc
 compile_commands.json
