@@ -389,7 +389,7 @@ static void reclaim_discarded_jobs(uint8_t core_id) {
   while (!list_empty(&core_state->discard_list)) {
     job_struct *discarded_job = pop_next_job(&core_state->discard_list);
 
-    if (is_admissible(core_id, discarded_job)) {
+    if (is_admissible(core_id, discarded_job, 0.0f)) {
       LOG(LOG_LEVEL_INFO,
           "Accommodating discarded job %d (Original Core ID: %u)",
           discarded_job->parent_task->id, discarded_job->job_pool_id);
@@ -410,12 +410,13 @@ static void reclaim_discarded_jobs(uint8_t core_id) {
   job_struct *cur, *next;
   pthread_mutex_lock(&proc_state.discard_queue_lock);
   list_for_each_entry_safe(cur, next, &proc_state.discard_queue, link) {
-    if (is_admissible(core_id, cur)) {
+    if (is_admissible(core_id, cur, MIGRATION_PENALTY_TICKS)) {
       LOG(LOG_LEVEL_INFO,
           "Accommodating discarded job %d (Original Core ID: %u)",
           cur->parent_task->id, cur->job_pool_id);
       core_state->decision_point = true;
       list_del(&cur->link);
+      cur->acet += MIGRATION_PENALTY_TICKS;
       if (cur->is_replica) {
         add_to_queue_sorted(&core_state->replica_queue, cur);
       } else {

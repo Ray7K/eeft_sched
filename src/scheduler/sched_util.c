@@ -418,7 +418,8 @@ uint32_t find_next_effective_arrival_time(uint8_t core_id) {
   return min_arrival_time;
 }
 
-bool is_admissible(uint8_t core_id, job_struct *candidate_job) {
+bool is_admissible(uint8_t core_id, job_struct *candidate_job,
+                   float extra_margin) {
   core_state *core_state = &core_states[core_id];
   uint32_t tstart = candidate_job->arrival_time;
   float scaling = 1.0f;
@@ -434,7 +435,7 @@ bool is_admissible(uint8_t core_id, job_struct *candidate_job) {
       return false;
     }
 
-    float needed = SLACK_MARGIN_TICKS;
+    float needed = SLACK_MARGIN_TICKS + extra_margin;
 
     float available =
         find_slack(core_id, crit_lvl, tstart, scaling, candidate_job);

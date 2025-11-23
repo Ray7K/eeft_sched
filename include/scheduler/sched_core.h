@@ -22,7 +22,7 @@ typedef struct {
 
   job_struct *running_job;
 
-  uint32_t next_migration_allowed_tick;
+  uint32_t next_migration_eligible_tick;
 
   uint32_t next_dpm_eligible_tick;
 

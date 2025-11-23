@@ -47,7 +47,7 @@ typedef struct job {
 
   struct list_head link;
 
-  uint32_t migration_cooldown;
+  uint32_t next_migration_eligible_tick;
 
   _Atomic int refcount;
 

@@ -51,6 +51,7 @@ job_struct *create_job(const task_struct *parent_task, uint8_t core_id) {
     new_job->parent_task = parent_task;
     new_job->state = JOB_STATE_IDLE;
     new_job->job_pool_id = core_id;
+    new_job->next_migration_eligible_tick = 0;
     INIT_LIST_HEAD(&new_job->link);
 
     atomic_store_explicit(&new_job->refcount, 1, memory_order_release);
@@ -78,6 +79,8 @@ job_struct *clone_job(const job_struct *job, uint8_t core_id) {
   new_job->actual_deadline = job->actual_deadline;
   new_job->virtual_deadline = job->virtual_deadline;
   new_job->is_replica = job->is_replica;
+  new_job->next_migration_eligible_tick = job->next_migration_eligible_tick;
+
   memcpy(new_job->relative_tuned_deadlines, job->relative_tuned_deadlines,
          sizeof(uint32_t) * MAX_CRITICALITY_LEVELS);
   new_job->is_being_offered =

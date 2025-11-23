@@ -21,7 +21,8 @@ uint32_t calculate_allocated_horizon(uint8_t core_id);
 float find_slack(uint8_t core_id, criticality_level crit_lvl, uint32_t tstart,
                  float scaling_factor, const job_struct *extra_job);
 
-bool is_admissible(uint8_t core_id, job_struct *candidate_job);
+bool is_admissible(uint8_t core_id, job_struct *candidate_job,
+                   float extra_margin);
 
 float get_util(uint8_t core_id);
 

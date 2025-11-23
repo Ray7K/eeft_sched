@@ -37,6 +37,8 @@ static void test_create_and_clone_job(test_ctx *ctx) {
   ASSERT_NOT_NULL(ctx, j);
   EXPECT_EQ(ctx, j->parent_task->id, t.id);
   EXPECT_EQ(ctx, atomic_load(&j->refcount), 1);
+  EXPECT_EQ(ctx, j->next_migration_eligible_tick, 0u);
+
   j->arrival_time = 10;
   j->virtual_deadline = 50;
   j->actual_deadline = 60;
@@ -44,6 +46,7 @@ static void test_create_and_clone_job(test_ctx *ctx) {
   j->acet = 4.0f;
   j->executed_time = 1.0f;
   j->state = JOB_STATE_READY;
+  j->next_migration_eligible_tick = 60;
   for (int i = 0; i < MAX_CRITICALITY_LEVELS; i++)
     j->relative_tuned_deadlines[i] = 100 + i;
 
@@ -58,6 +61,8 @@ static void test_create_and_clone_job(test_ctx *ctx) {
   EXPECT_NEAR(ctx, cj->wcet, j->wcet, 1.0e-10);
   EXPECT_NEAR(ctx, cj->acet, j->acet, 1.0e-10);
   EXPECT_NEAR(ctx, cj->executed_time, j->executed_time, 1.0e-10);
+  EXPECT_EQ(ctx, cj->next_migration_eligible_tick,
+            j->next_migration_eligible_tick);
   EXPECT_EQ(ctx, atomic_load(&cj->refcount), 1);
   for (int i = 0; i < MAX_CRITICALITY_LEVELS; i++)
     EXPECT_EQ(ctx, cj->relative_tuned_deadlines[i],

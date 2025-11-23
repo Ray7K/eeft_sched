@@ -7,6 +7,7 @@
 #include "scheduler/sched_migration.h"
 #include "scheduler/sched_util.h"
 
+#include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -21,6 +22,22 @@ static offer offer_pool[MAX_CONCURRENT_OFFERS];
 struct list_head offer_free_list;
 
 pthread_mutex_t offer_free_list_lock;
+
+static inline bool is_migration_profitable(job_struct *job,
+                                           uint32_t current_time) {
+
+  if (current_time < job->next_migration_eligible_tick) {
+    return false;
+  }
+
+  float remaining = fmaxf(0.0f, job->wcet - job->executed_time);
+
+  if (remaining < MIN_MIGRATION_BENEFIT_THRESHOLD) {
+    return false;
+  }
+
+  return true;
+}
 
 void init_migration(void) {
   for (int i = 0; i < NUM_CORES_PER_PROC; i++) {
@@ -162,11 +179,11 @@ static inline void handle_light_donor_push(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
 
   job_struct *job;
-  uint32_t num_offers_sent = 0;
 
   list_for_each_entry_rev(job, &core_state->ready_queue, link) {
-    if (num_offers_sent >= 4) {
-      break;
+
+    if (!is_migration_profitable(job, proc_state.system_time)) {
+      continue;
     }
 
     if (atomic_exchange(&job->is_being_offered, true))
@@ -205,12 +222,11 @@ static inline void handle_light_donor_push(uint8_t core_id) {
     pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
     list_add(&offer->link, &proc_state.ready_job_offer_queue);
     pthread_mutex_unlock(&proc_state.ready_job_offer_queue_lock);
-
-    num_offers_sent++;
   }
   list_for_each_entry_rev(job, &core_state->replica_queue, link) {
-    if (num_offers_sent >= 4) {
-      break;
+
+    if (!is_migration_profitable(job, proc_state.system_time)) {
+      continue;
     }
 
     if (atomic_exchange(&job->is_being_offered, true))
@@ -252,27 +268,24 @@ static inline void handle_light_donor_push(uint8_t core_id) {
     pthread_mutex_lock(&proc_state.ready_job_offer_queue_lock);
     list_add(&offer->link, &proc_state.ready_job_offer_queue);
     pthread_mutex_unlock(&proc_state.ready_job_offer_queue_lock);
-
-    num_offers_sent++;
   }
 }
 
 static inline void handle_idle_donor_push(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
-
-  uint8_t num_offers = 0;
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
     const task_alloc_map *instance = &allocation_map[i];
-
-    if (num_offers >= 2) {
-      return;
-    }
 
     if (instance->proc_id == core_state->proc_id &&
         instance->core_id == core_state->core_id) {
       const task_struct *task = find_task_by_id(instance->task_id);
 
       if (task == NULL) {
+        continue;
+      }
+
+      if ((float)task->wcet[core_state->local_criticality_level] <
+          MIN_MIGRATION_BENEFIT_THRESHOLD) {
         continue;
       }
 
@@ -362,23 +375,20 @@ static inline void handle_idle_donor_push(uint8_t core_id) {
         core_state->next_dpm_eligible_tick = offer->expiry_time;
       }
 
-      if (core_state->next_migration_allowed_tick <=
+      if (core_state->next_migration_eligible_tick <=
           core_state->next_dpm_eligible_tick) {
-        core_state->next_migration_allowed_tick =
+        core_state->next_migration_eligible_tick =
             core_state->next_dpm_eligible_tick + 1;
       }
 
       pthread_mutex_lock(&proc_state.future_job_offer_queue_lock);
       list_add(&offer->link, &proc_state.future_job_offer_queue);
       pthread_mutex_unlock(&proc_state.future_job_offer_queue_lock);
-      num_offers++;
     }
   skip:
     continue;
   }
 }
-
-#define LIGHT_DONOR_UTIL_THRESHOLD 0.3f
 
 void attempt_migration_push(uint8_t core_id) {
 
@@ -389,13 +399,11 @@ void attempt_migration_push(uint8_t core_id) {
       proc_state.system_time > core_state->next_dpm_eligible_tick) {
     handle_idle_donor_push(core_id);
   } else if (proc_state.system_time >=
-                 core_state->next_migration_allowed_tick &&
+                 core_state->next_migration_eligible_tick &&
              util < LIGHT_DONOR_UTIL_THRESHOLD) {
     handle_light_donor_push(core_id);
   }
 }
-
-#define UTIL_UPPER_CAP 0.85f
 
 void participate_in_auctions(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
@@ -412,7 +420,7 @@ void participate_in_auctions(uint8_t core_id) {
       job_struct *candidate = cur->j_copy;
       LOG(LOG_LEVEL_INFO, "Evaluating job offer for Job %d",
           candidate->parent_task->id);
-      if (is_admissible(core_id, candidate)) {
+      if (is_admissible(core_id, candidate, MIGRATION_PENALTY_TICKS)) {
         float util = get_util(core_id);
         LOG(LOG_LEVEL_INFO,
             "Bidding for Job %d (Arrival: %d Expiry: %d) with utility %.2f",
@@ -445,7 +453,7 @@ void participate_in_auctions(uint8_t core_id) {
       job_struct *candidate = cur->j_copy;
       LOG(LOG_LEVEL_INFO, "Evaluating future job offer for Job %d",
           candidate->parent_task->id);
-      if (is_admissible(core_id, candidate)) {
+      if (is_admissible(core_id, candidate, MIGRATION_PENALTY_TICKS)) {
         float util = get_util(core_id);
         LOG(LOG_LEVEL_INFO,
             "Bidding for future Job %d (Arrival: %d) with utility %.2f",
@@ -513,8 +521,11 @@ void handle_offer_cleanup(uint8_t core_id) {
         job_struct *awarded_job = get_job_ref(cur->j_orig);
         awarded_job->virtual_deadline = awarded_job->actual_deadline;
 
-        core_state->next_migration_allowed_tick =
-            proc_state.system_time + MIGRATION_COOLDOWN_TICKS;
+        awarded_job->next_migration_eligible_tick =
+            proc_state.system_time + JOB_MIGRATION_COOLDOWN_TICKS;
+
+        core_state->next_migration_eligible_tick =
+            proc_state.system_time + CORE_MIGRATION_COOLDOWN_TICKS;
 
         ring_buffer_enqueue(
             &core_states[cur->best_bidder_id].award_notification_queue,
@@ -549,12 +560,14 @@ void handle_offer_cleanup(uint8_t core_id) {
             cur->j_copy->parent_task->id, cur->j_copy->arrival_time,
             cur->j_copy->wcet, cur->best_bidder_id % NUM_CORES_PER_PROC);
 
-        job_struct *awarded_job =
-            get_job_ref(cur->j_orig); // get: awardee owned ref
+        job_struct *awarded_job = get_job_ref(cur->j_orig);
         awarded_job->virtual_deadline = awarded_job->actual_deadline;
 
-        core_state->next_migration_allowed_tick =
-            proc_state.system_time + MIGRATION_COOLDOWN_TICKS;
+        awarded_job->next_migration_eligible_tick =
+            proc_state.system_time + JOB_MIGRATION_COOLDOWN_TICKS;
+
+        core_state->next_migration_eligible_tick =
+            proc_state.system_time + CORE_MIGRATION_COOLDOWN_TICKS;
 
         delegated_job *dj = create_delegation(core_id);
         if (!dj) {
@@ -593,6 +606,7 @@ void process_award_notifications(uint8_t core_id) {
         (float)
             awarded_job->parent_task->wcet[core_state->local_criticality_level];
     awarded_job->virtual_deadline = awarded_job->actual_deadline;
+    awarded_job->acet += MIGRATION_PENALTY_TICKS;
 
     if (awarded_job->arrival_time > proc_state.system_time) {
       LOG(LOG_LEVEL_INFO,

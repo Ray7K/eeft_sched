@@ -19,9 +19,12 @@ typedef struct {
 
 #define NUM_DVFS_LEVELS 6
 
+#define DPM_ENTRY_PHYSICAL_COST_TICKS 0.1f
+#define DPM_EXIT_PHYSICAL_COST_TICKS 0.2f
+
 #define DPM_EXIT_LATENCY_TICKS 1
 #define DPM_ENTRY_LATENCY_TICKS 1
-#define DPM_IDLE_THRESHOLD_TICKS 2
+#define DPM_IDLE_THRESHOLD_TICKS 4
 
 extern const dvfs_level dvfs_levels[NUM_DVFS_LEVELS];
 
