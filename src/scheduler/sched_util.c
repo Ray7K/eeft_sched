@@ -400,19 +400,14 @@ uint32_t find_next_effective_arrival_time(uint8_t core_id) {
     delegated_job *dj;
 
     list_for_each_entry(dj, deleg_list, link) {
-      if (dj->arrival_tick < next_arrival)
-        continue;
-      if (dj->arrival_tick == next_arrival && dj->task_id == task->id) {
-        goto skip_task;
+      if (dj->arrival_tick == next_arrival && dj->task_id == task->id &&
+          dj->owned_by_remote) {
+        next_arrival += task->period;
       }
-      break;
     }
 
     if (next_arrival < min_arrival_time)
       min_arrival_time = next_arrival;
-
-  skip_task:
-    continue;
   }
 
   return min_arrival_time;
