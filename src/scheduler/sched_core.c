@@ -505,9 +505,9 @@ void scheduler_tick(uint8_t core_id) {
 
   handle_running_job(core_id);
 
-  remove_completed_jobs(core_id);
-
   handle_job_arrivals(core_id);
+
+  remove_completed_jobs(core_id);
 
   handle_offer_cleanup(core_id);
 

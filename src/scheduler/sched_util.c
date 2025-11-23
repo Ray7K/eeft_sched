@@ -12,7 +12,7 @@
 #include <float.h>
 #include <math.h>
 
-#define DEMAND_PADDING_PERCENT 0.1f
+#define SLACK_MARGIN_TICKS 0.05f
 #define SLACK_CALC_HORIZON_TICKS_CAP 5000
 #define MAX_DEADLINES (MAX_TASKS * 64)
 
@@ -434,10 +434,7 @@ bool is_admissible(uint8_t core_id, job_struct *candidate_job) {
       return false;
     }
 
-    float wcet = (float)candidate_job->parent_task->wcet[crit_lvl];
-    float executed = candidate_job->executed_time;
-    float needed = fmaxf(0.0f, (wcet - executed) / scaling) *
-                   (1.0f + DEMAND_PADDING_PERCENT);
+    float needed = SLACK_MARGIN_TICKS;
 
     float available =
         find_slack(core_id, crit_lvl, tstart, scaling, candidate_job);
