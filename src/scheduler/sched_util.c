@@ -13,7 +13,7 @@
 #include <math.h>
 
 #define SLACK_MARGIN_TICKS 0.05f
-#define SLACK_CALC_HORIZON_TICKS_CAP 5000
+#define SLACK_CALC_HORIZON_TICKS_CAP 2000
 #define MAX_DEADLINES (MAX_TASKS * 64)
 
 float generate_acet(job_struct *job) {
@@ -37,7 +37,7 @@ float generate_acet(job_struct *job) {
 uint32_t calculate_allocated_horizon(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
 
-  uint32_t horizon = 0;
+  uint32_t horizon = 1;
 
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
     const task_alloc_map *m = &allocation_map[i];
@@ -45,17 +45,14 @@ uint32_t calculate_allocated_horizon(uint8_t core_id) {
         m->core_id == core_state->core_id) {
 
       const task_struct *t = find_task_by_id(m->task_id);
+
       if (!t || t->period == 0)
         continue;
 
-      if (horizon == 0) {
-        horizon = t->period;
-      } else {
-        horizon = safe_lcm(horizon, t->period, SLACK_CALC_HORIZON_TICKS_CAP);
-        if (horizon >= SLACK_CALC_HORIZON_TICKS_CAP) {
-          horizon = SLACK_CALC_HORIZON_TICKS_CAP;
-          break;
-        }
+      horizon = safe_lcm(horizon, t->period, SLACK_CALC_HORIZON_TICKS_CAP);
+      if (horizon >= SLACK_CALC_HORIZON_TICKS_CAP) {
+        horizon = SLACK_CALC_HORIZON_TICKS_CAP;
+        break;
       }
     }
   }
@@ -216,6 +213,10 @@ static uint32_t collect_active_and_future_deadlines(
       deadlines[count++] = arrival + deadline;
       arrival += period;
     }
+  }
+
+  if (count == 0) {
+    return 0;
   }
 
   qsort(deadlines, count, sizeof(uint32_t), cmp_uint32);

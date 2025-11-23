@@ -433,6 +433,10 @@ void scheduler_init(void) {
   task_management_init();
   power_management_init();
 
+  for (uint32_t i = 0; i < SYSTEM_TASKS_SIZE; i++) {
+    task_lookup[system_tasks[i].id] = &system_tasks[i];
+  }
+
   for (int i = 0; i < NUM_CORES_PER_PROC; i++) {
     core_states[i].proc_id = proc_state.processor_id;
     core_states[i].core_id = i;
@@ -457,10 +461,6 @@ void scheduler_init(void) {
   }
 
   init_migration();
-
-  for (uint32_t i = 0; i < SYSTEM_TASKS_SIZE; i++) {
-    task_lookup[system_tasks[i].id] = &system_tasks[i];
-  }
 
   LOG(LOG_LEVEL_INFO, "Scheduler Initialization Complete.");
 }
