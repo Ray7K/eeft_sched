@@ -282,8 +282,7 @@ def build_core_time_series(states, scaling_records):
         for t, val in core_scaling.items():
             if global_min <= t <= global_max:
                 df.at[t, "scaling"] = val
-        df["scaling"] = df["scaling"].ffill()
-        df.loc[df["sleep"] == 1, "scaling"] = float("nan")
+        df["scaling"] = df["scaling"].ffill().bfill()
 
         core_series[core] = df
 
@@ -426,36 +425,91 @@ def plot_percore_utilization(results):
 
 
 def plot_system_power(results):
-    """Plot total system-level power proxy vs time."""
     os.makedirs(REPORTS_DIR, exist_ok=True)
-    # Combine all cores
+
+    DVFS = {
+        100: (2000e6, 1.00),
+        90: (1800e6, 0.95),
+        75: (1500e6, 0.90),
+        60: (1200e6, 0.85),
+        50: (1000e6, 0.80),
+        40: (800e6, 0.76),
+    }
+
+    LEAK_COEFF = 0.30 * (1.00**2 * 2000e6)
+
+    SLEEP_LEAK_FACTOR = 0.01
+
     combined = None
-    for df in results.values():
-        df_local = df[["time", "busy", "scaling"]].copy()
-        # Power proxy: busy × (f^3)
-        df_local["power_proxy"] = (
-            df_local["busy"] * (df_local["scaling"].fillna(0) / 100.0) ** 3
-        )
+    core_energy = {} 
+
+    for core_key, df in results.items():
+
+        df = df.copy()
+
+        freqs = []
+        volts = []
+        for s in df["scaling"].fillna(0).astype(int):
+            if s in DVFS:
+                f_s, v_s = DVFS[s]
+            else:
+                f_s, v_s = (0.0, 0.0)
+            freqs.append(f_s)
+            volts.append(v_s)
+
+        df["freq"] = freqs
+        df["volt"] = volts
+
+        df["activity"] = 0.0
+        df.loc[df["busy"] == 1, "activity"] = 1.0
+        df.loc[(df["busy"] == 0) & (df["sleep"] == 0), "activity"] = 0.1
+        df.loc[df["sleep"] == 1, "activity"] = 0.0
+
+        df["dyn_power"] = df["activity"] * (df["volt"] ** 2) * df["freq"]
+
+        df["leak_power"] = LEAK_COEFF * df["volt"]
+
+        df.loc[df["sleep"] == 1, "leak_power"] *= SLEEP_LEAK_FACTOR
+
+        df["total_power"] = df["dyn_power"] + df["leak_power"]
+
+        core_energy[core_key] = df["total_power"].sum()
+
+        df_local = df[["time", "total_power"]].copy()
         if combined is None:
-            combined = df_local[["time", "power_proxy"]].copy()
+            combined = df_local
         else:
-            combined["power_proxy"] += df_local["power_proxy"]
+            combined["total_power"] += df_local["total_power"]
 
     if combined is None:
         return
 
+    max_power = combined["total_power"].max()
+    combined["norm_power"] = combined["total_power"] / max_power
+
+    system_energy = combined["total_power"].sum()
+
     combined["smooth"] = (
-        combined["power_proxy"].rolling(window=ROLLING_WINDOW, min_periods=1).mean()
+        combined["norm_power"].rolling(window=ROLLING_WINDOW, min_periods=1).mean()
     )
 
     plt.figure(figsize=(12, 4), constrained_layout=True)
     plt.plot(combined["time"], combined["smooth"], linewidth=1.2)
-    plt.title("System Power Proxy vs Time")
+    plt.title("System Power (Normalized V²f + Leakage)")
     plt.xlabel("System Time (ticks)")
-    plt.ylabel("Relative Power (arb. units)")
+    plt.ylabel("Normalized Power")
     plt.grid(True, linestyle="--", alpha=0.4)
     plt.savefig(os.path.join(REPORTS_DIR, "system_power_timeline.png"), dpi=150)
     plt.close()
+
+    with open(os.path.join(REPORTS_DIR, "energy_report.txt"), "w") as f:
+        f.write("=== ENERGY REPORT ===\n")
+        f.write(f"Total system energy (normalized units): {system_energy:.3e}\n\n")
+        f.write("--- Per-core energy (normalized units) ---\n")
+        for (proc, core), e in sorted(core_energy.items()):
+            f.write(f"P{proc}:C{core} = {e:.3e}\n")
+
+    print(f"[Energy] Total system energy = {system_energy:.3e}")
 
 
 def plot_mode_change_timeline(mode_changes):
