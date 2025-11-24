@@ -388,7 +388,8 @@ uint32_t find_next_effective_arrival_time(uint8_t core_id) {
       continue;
 
     const task_struct *task = find_task_by_id(instance->task_id);
-    if (!task || task->period == 0)
+    if (!task || task->period == 0 ||
+        task->crit_level < core_state->local_criticality_level)
       continue;
 
     uint32_t current_time = proc_state.system_time;

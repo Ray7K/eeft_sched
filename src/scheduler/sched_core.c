@@ -166,10 +166,24 @@ static void handle_job_arrivals(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
 
   job_struct *new_job, *next;
+  log_job_queue(LOG_LEVEL_DEBUG, "Pending Jobs",
+                &core_state->pending_jobs_queue);
   list_for_each_entry_safe(new_job, next, &core_state->pending_jobs_queue,
                            link) {
-    if (new_job->arrival_time > proc_state.system_time) {
+    if (new_job->arrival_time < proc_state.system_time) {
+      if (new_job->parent_task->crit_level <
+          core_state->local_criticality_level) {
+        list_del(&new_job->link);
+        put_job_ref(new_job, core_id);
+      } else {
+        LOG(LOG_LEVEL_ERROR, "Missed Pending Job %d Arrival!",
+            new_job->parent_task->id);
+      }
       continue;
+    }
+
+    if (new_job->arrival_time > proc_state.system_time) {
+      break;
     }
 
     list_del(&new_job->link);
