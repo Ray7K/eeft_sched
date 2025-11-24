@@ -530,16 +530,16 @@ void scheduler_tick(uint8_t core_id) {
 
   reclaim_discarded_jobs(core_id);
 
-  attempt_migration_push(core_id);
-
-  participate_in_auctions(core_id);
-
   job_struct *next_job = select_next_job(core_id);
 
   if (next_job != NULL) {
     core_state->decision_point = true;
     dispatch_job(core_id, next_job);
   }
+
+  attempt_migration_push(core_id);
+
+  participate_in_auctions(core_id);
 
   if (core_state->decision_point) {
     if (core_state->running_job != NULL &&
