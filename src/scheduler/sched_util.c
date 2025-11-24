@@ -374,7 +374,7 @@ uint32_t find_next_effective_arrival_time(uint8_t core_id) {
 
   job_struct *pending;
   list_for_each_entry(pending, &core_state->pending_jobs_queue, link) {
-    if (pending->arrival_time >= proc_state.system_time &&
+    if (pending->arrival_time > proc_state.system_time &&
         pending->arrival_time < min_arrival_time) {
       min_arrival_time = pending->arrival_time;
     }
@@ -393,9 +393,7 @@ uint32_t find_next_effective_arrival_time(uint8_t core_id) {
 
     uint32_t current_time = proc_state.system_time;
     uint32_t remainder = current_time % task->period;
-    uint32_t next_arrival = (remainder == 0)
-                                ? current_time
-                                : current_time + (task->period - remainder);
+    uint32_t next_arrival = current_time + (task->period - remainder);
 
     struct list_head *deleg_list = &core_state->delegated_job_queue;
     delegated_job *dj;
