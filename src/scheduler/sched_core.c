@@ -587,6 +587,12 @@ void scheduler_tick(uint8_t core_id) {
 
   reclaim_discarded_jobs(core_id);
 
+  update_delegations(core_id);
+
+  attempt_migration_push(core_id);
+
+  process_migration_requests(core_id);
+
   job_struct *next_job = select_next_job(core_id);
 
   if (next_job != NULL) {
@@ -594,11 +600,9 @@ void scheduler_tick(uint8_t core_id) {
     dispatch_job(core_id, next_job);
   }
 
-  update_delegations(core_id);
-
-  attempt_migration_push(core_id);
-
-  process_migration_requests(core_id);
+  if (power_management_try_procrastination(core_id)) {
+    goto pmsp_skip;
+  }
 
   if (core_state->decision_point) {
     if (core_state->running_job != NULL &&
@@ -616,7 +620,7 @@ void scheduler_tick(uint8_t core_id) {
     power_management_set_dpm_interval(core_id, next_eff_arrival_time);
   }
 
-skip_dvfs:
+pmsp_skip:
   update_core_summary(core_id);
 
   log_core_state(core_id);

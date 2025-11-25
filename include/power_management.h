@@ -35,5 +35,6 @@ void power_set_dvfs_level(uint8_t core_id, uint8_t level_idx);
 uint8_t power_get_current_dvfs_level(uint8_t core_id);
 void power_management_set_dpm_interval(uint8_t core_id,
                                        uint32_t next_arrival_time);
+bool power_management_try_procrastination(uint8_t core_id);
 
 #endif
