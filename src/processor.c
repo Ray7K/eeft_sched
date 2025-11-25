@@ -111,12 +111,6 @@ void processor_init(uint8_t proc_id) {
   barrier_init(&proc_state.core_completion_barrier, NUM_CORES_PER_PROC + 1, 0);
   barrier_init(&proc_state.time_sync_barrier, NUM_CORES_PER_PROC + 1, 0);
 
-  INIT_LIST_HEAD(&proc_state.ready_job_offer_queue);
-  pthread_mutex_init(&proc_state.ready_job_offer_queue_lock, NULL);
-
-  INIT_LIST_HEAD(&proc_state.future_job_offer_queue);
-  pthread_mutex_init(&proc_state.future_job_offer_queue_lock, NULL);
-
   ipc_thread_init();
   scheduler_init();
 

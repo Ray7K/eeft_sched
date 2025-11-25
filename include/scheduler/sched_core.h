@@ -13,18 +13,22 @@ typedef struct {
   struct list_head replica_queue;
   struct list_head discard_list;
   struct list_head pending_jobs_queue;
-  struct list_head bid_history_queue;
+
   struct list_head delegated_job_queue;
 
-  job_struct *award_buf[MAX_CONCURRENT_OFFERS];
-  _Atomic uint64_t seq[MAX_CONCURRENT_OFFERS];
-  ring_buffer award_notification_queue;
+  migration_request migration_buf[MAX_MIGRATION_REQUESTS];
+  _Atomic uint64_t migration_seq[MAX_MIGRATION_REQUESTS];
+  ring_buffer migration_request_queue;
+
+  delegation_ack delegation_ack_buf[MAX_FUTURE_DELEGATIONS];
+  _Atomic uint64_t delegation_ack_seq[MAX_FUTURE_DELEGATIONS];
+  ring_buffer delegation_ack_queue;
+
+  pthread_mutex_t rq_lock;
 
   job_struct *running_job;
 
   uint32_t next_migration_eligible_tick;
-
-  uint32_t next_dpm_eligible_tick;
 
   uint32_t cached_slack_horizon;
 
@@ -43,10 +47,26 @@ typedef struct {
 
 } core_state;
 
+typedef struct {
+  float util;
+  float slack;
+  uint32_t next_arrival;
+  bool is_idle;
+  uint8_t dvfs_level;
+} core_summary;
+
 void scheduler_init(void);
 
 void scheduler_tick(uint8_t core_id);
 
 extern core_state core_states[NUM_CORES_PER_PROC];
+
+extern core_summary core_summaries[NUM_CORES_PER_PROC];
+
+extern pthread_mutex_t core_summary_locks[NUM_CORES_PER_PROC];
+
+#define LOCK_RQ(core_id) pthread_mutex_lock(&core_states[core_id].rq_lock)
+
+#define UNLOCK_RQ(core_id) pthread_mutex_unlock(&core_states[core_id].rq_lock)
 
 #endif

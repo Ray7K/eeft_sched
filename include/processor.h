@@ -29,12 +29,6 @@ typedef struct {
   uint8_t processor_id;
   barrier core_completion_barrier;
   barrier time_sync_barrier;
-
-  struct list_head ready_job_offer_queue;
-  pthread_mutex_t ready_job_offer_queue_lock;
-
-  struct list_head future_job_offer_queue;
-  pthread_mutex_t future_job_offer_queue_lock;
 } processor_state;
 
 extern barrier *proc_barrier;
