@@ -7,24 +7,24 @@ for configuration, task generation, offline allocation, and log analysis.
 
 ## Features
 
-- **Mixed-Criticality Scheduling** with mode changes.
-- **Multi-Processor, Multi-Core Simulation**.
+- **Mixed-Criticality Scheduling** with mode changes
+- **Multi-Processor, Multi-Core Simulation**
 - **Distributed Execution Model:** Each processor is simulated as a separate OS
-  process, with each core implemented as a thread within that process.
-- **Dynamic Power Management (DPM)**: idle cores enter sleep states.
-- **Dynamic Voltage and Frequency Scaling (DVFS)** based on available slack.
-- **Intra-Processor Job Migration** via an auction-based mechanism.
+  process, with each core implemented as a thread within that process
+- **Dynamic Power Management (DPM)**: idle cores enter sleep states
+- **Dynamic Voltage and Frequency Scaling (DVFS)** based on available slack
+- **Intra-Processor Job Migration** for load consolidation and longer DPM intervals
 - **Quality of Service (QoS)** for low-criticality jobs
-- **Active Task Replication** for fault tolerance.
+- **Active Task Replication** for fault tolerance
 - **Distributed Inter-Processor Communication** for propagating completion events
-  and criticality changes between processors using multicast.
+  and criticality changes between processors using multicast
 - **Offline Tooling**:
   - system configuration generation
   - taskset generation
   - offline task allocation
   - log parsing and visualization
-- **Robust Build System** with debug, release, and profile builds.
-- **Sanitizer Support**: ASAN, TSAN, UBSAN (UBSAN default).
+- **Robust Build System** with debug, release, and profile builds
+- **Sanitizer Support**: ASAN, TSAN, UBSAN (UBSAN default)
 - **Custom Test Framework**
 
 ## Requirements
