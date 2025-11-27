@@ -357,7 +357,8 @@ void process_migration_requests(uint8_t core_id) {
     if (job_to_migrate->state == JOB_STATE_IDLE &&
         job_to_migrate->arrival_time > proc_state.system_time) {
 
-      add_to_queue_sorted(&core_st->pending_jobs_queue, job_to_migrate);
+      add_to_queue_sorted_by_arrival(&core_st->pending_jobs_queue,
+                                     job_to_migrate);
 
       delegation_ack ack = {.task_id = job_to_migrate->parent_task->id,
                             .arrival_tick = job_to_migrate->arrival_time,

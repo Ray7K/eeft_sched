@@ -587,10 +587,9 @@ void scheduler_tick(uint8_t core_id) {
 
   reclaim_discarded_jobs(core_id);
 
+  // Migration
   update_delegations(core_id);
-
   attempt_migration_push(core_id);
-
   process_migration_requests(core_id);
 
   job_struct *next_job = select_next_job(core_id);
