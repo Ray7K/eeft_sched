@@ -42,6 +42,56 @@ static void test_add_single_and_delete(test_ctx *ctx) {
   EXPECT_EQ(ctx, node.list.prev, NULL);
 }
 
+static void test_add_tail_basic(test_ctx *ctx) {
+  LIST_HEAD(head);
+
+  struct test_node a = {.val = 1};
+  struct test_node b = {.val = 2};
+  struct test_node c = {.val = 3};
+
+  INIT_LIST_HEAD(&a.list);
+  INIT_LIST_HEAD(&b.list);
+  INIT_LIST_HEAD(&c.list);
+
+  list_add_tail(&a.list, &head);
+  list_add_tail(&b.list, &head);
+  list_add_tail(&c.list, &head);
+
+  int expected[] = {1, 2, 3};
+  int idx = 0;
+  struct test_node *pos;
+
+  list_for_each_entry(pos, &head, list) {
+    EXPECT_EQ(ctx, pos->val, expected[idx]);
+    idx++;
+  }
+
+  EXPECT_EQ(ctx, idx, 3);
+}
+
+static void test_add_head_and_tail_interleaved(test_ctx *ctx) {
+  LIST_HEAD(head);
+
+  struct test_node a = {.val = 1};
+  struct test_node b = {.val = 2};
+  struct test_node c = {.val = 3};
+
+  list_add(&a.list, &head);      // head: 1
+  list_add_tail(&b.list, &head); // tail: 1 → 2
+  list_add(&c.list, &head);      // head: 3 → 1 → 2
+
+  int expected[] = {3, 1, 2};
+  int idx = 0;
+  struct test_node *pos;
+
+  list_for_each_entry(pos, &head, list) {
+    EXPECT_EQ(ctx, pos->val, expected[idx]);
+    idx++;
+  }
+
+  EXPECT_EQ(ctx, idx, 3);
+}
+
 static void test_add_multiple_and_iteration(test_ctx *ctx) {
   LIST_HEAD(head);
   struct test_node a = {.val = 1}, b = {.val = 2}, c = {.val = 3};
@@ -160,6 +210,8 @@ static test_case list_cases[] = {
     TEST_CASE(test_init_and_empty),
     TEST_CASE(test_add_single_and_delete),
     TEST_CASE(test_add_multiple_and_iteration),
+    TEST_CASE(test_add_tail_basic),
+    TEST_CASE(test_add_head_and_tail_interleaved),
     TEST_CASE(test_iteration_empty),
     TEST_CASE(test_delete_first_and_last),
     TEST_CASE(test_splice_empty_src),

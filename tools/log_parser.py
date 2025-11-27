@@ -438,6 +438,8 @@ def plot_system_power(results):
 
     LEAK_COEFF = 0.30 * (1.00**2 * 2000e6)
 
+
+
     SLEEP_LEAK_FACTOR = 0.01
 
     combined = None

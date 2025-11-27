@@ -71,12 +71,12 @@ static inline void add_delegation_sorted(delegated_job *dj, uint8_t core_id) {
   list_for_each_entry_safe(cursor, n, &core_states[core_id].delegated_job_queue,
                            link) {
     if (dj->arrival_tick < cursor->arrival_tick) {
-      list_add(&dj->link, cursor->link.prev);
+      list_add_tail(&dj->link, &cursor->link);
       return;
     }
   }
 
-  list_add(&dj->link, &core_states[core_id].delegated_job_queue);
+  list_add_tail(&dj->link, &core_states[core_id].delegated_job_queue);
 }
 
 void update_delegations(uint8_t core_id) {

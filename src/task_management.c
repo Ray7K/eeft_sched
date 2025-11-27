@@ -116,12 +116,12 @@ void add_to_queue_sorted(struct list_head *queue_head, job_struct *job_to_add) {
 
   list_for_each_entry_safe(cursor, n, queue_head, link) {
     if (job_to_add->virtual_deadline < cursor->virtual_deadline) {
-      list_add(&job_to_add->link, cursor->link.prev);
+      list_add_tail(&job_to_add->link, &cursor->link);
       return;
     }
   }
 
-  list_add(&job_to_add->link, queue_head->prev);
+  list_add_tail(&job_to_add->link, queue_head);
 }
 
 void add_to_queue_sorted_by_arrival(struct list_head *queue_head,
@@ -134,12 +134,12 @@ void add_to_queue_sorted_by_arrival(struct list_head *queue_head,
   job_struct *cursor, *n;
   list_for_each_entry_safe(cursor, n, queue_head, link) {
     if (job_to_add->arrival_time < cursor->arrival_time) {
-      list_add(&job_to_add->link, cursor->link.prev);
+      list_add_tail(&job_to_add->link, &cursor->link);
       return;
     }
   }
 
-  list_add(&job_to_add->link, queue_head->prev);
+  list_add_tail(&job_to_add->link, queue_head);
 }
 
 job_struct *peek_next_job(struct list_head *queue_head) {
