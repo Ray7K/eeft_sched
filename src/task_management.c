@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define JOBS_PER_CORE 200
+#define JOBS_PER_CORE 50
 
 typedef struct {
   job_struct job_pool[JOBS_PER_CORE];
@@ -57,6 +57,8 @@ job_struct *create_job(const task_struct *parent_task, uint8_t core_id) {
     atomic_store_explicit(&new_job->refcount, 1, memory_order_release);
     atomic_store_explicit(&new_job->is_being_offered, false,
                           memory_order_release);
+  } else {
+    LOG(LOG_LEVEL_ERROR, "Job pool exhausted on core %u", core_id);
   }
 
   return new_job;
