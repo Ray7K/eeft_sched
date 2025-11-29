@@ -1,3 +1,4 @@
+#include "lib/log.h"
 #include "tests/test_assert.h"
 #include "tests/test_core.h"
 
@@ -11,12 +12,16 @@
 #include <string.h>
 
 static int tm_tests_init(test_ctx *ctx) {
-  task_management_init();
   (void)ctx;
+  log_system_init(100);
+  task_management_init();
   return 0;
 }
 
-static void tm_tests_exit(test_ctx *ctx) { (void)ctx; }
+static void tm_tests_exit(test_ctx *ctx) {
+  (void)ctx;
+  log_system_shutdown();
+}
 
 static void test_task_management_init(test_ctx *ctx) {
   task_management_init();
