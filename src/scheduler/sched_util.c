@@ -13,7 +13,7 @@
 #include <math.h>
 
 #define SLACK_MARGIN_TICKS 0.05f
-#define SLACK_CALC_HORIZON_TICKS_CAP 2000
+#define SLACK_CALC_HORIZON_TICKS_CAP 5000
 #define MAX_DEADLINES (MAX_TASKS * 64)
 
 float generate_acet(job_struct *job) {

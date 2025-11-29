@@ -1,7 +1,6 @@
 #include "power_management.h"
 #include "processor.h"
 #include "sys_config.h"
-#include "task_alloc.h"
 
 #include "lib/list.h"
 #include "lib/log.h"
