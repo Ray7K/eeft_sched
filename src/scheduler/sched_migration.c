@@ -289,8 +289,7 @@ static inline void attempt_future_load_shedding(uint8_t core_id) {
 
       add_delegation_sorted(new_dj, core_id);
 
-      migration_request mig_req = {.job = get_job_ref(new_job),
-                                   .from_core = core_id};
+      migration_request mig_req = {.job = new_job, .from_core = core_id};
 
       ring_buffer_enqueue(&core_states[best_core_id].migration_request_queue,
                           &mig_req);
@@ -343,14 +342,13 @@ void process_migration_requests(uint8_t core_id) {
 
     uint8_t from_core = mig_req.from_core;
 
-    if (is_admissible(core_id, job_to_migrate, MIGRATION_PENALTY_TICKS) ==
-        false) {
-      put_job_ref(job_to_migrate, from_core);
+    if (!is_admissible(core_id, job_to_migrate, MIGRATION_PENALTY_TICKS)) {
       atomic_store_explicit(&job_to_migrate->is_being_offered, false,
                             memory_order_release);
       LOG(LOG_LEVEL_INFO,
           "Rejected migration of job %d to core %d due to inadmissibility",
           job_to_migrate->parent_task->id, core_id);
+      put_job_ref(job_to_migrate, from_core);
       continue;
     }
 
@@ -366,7 +364,6 @@ void process_migration_requests(uint8_t core_id) {
 
       ring_buffer_enqueue(&core_states[from_core].delegation_ack_queue, &ack);
 
-      put_job_ref(job_to_migrate, from_core);
       atomic_store_explicit(&job_to_migrate->is_being_offered, false,
                             memory_order_release);
 
@@ -386,6 +383,7 @@ void process_migration_requests(uint8_t core_id) {
     } else {
       atomic_store_explicit(&job_to_migrate->is_being_offered, false,
                             memory_order_release);
+      put_job_ref(job_to_migrate, from_core);
       double_rq_unlock(core_id, from_core);
       continue;
     }
@@ -401,9 +399,9 @@ void process_migration_requests(uint8_t core_id) {
 
     double_rq_unlock(core_id, from_core);
 
-    put_job_ref(job_to_migrate, from_core);
     atomic_store_explicit(&job_to_migrate->is_being_offered, false,
                           memory_order_release);
+    put_job_ref(job_to_migrate, from_core);
 
     LOG(LOG_LEVEL_INFO, "Migrated job %d from core %d to core %d",
         job_to_migrate->parent_task->id, from_core, core_id);
