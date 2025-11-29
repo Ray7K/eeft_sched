@@ -256,10 +256,7 @@ static inline void attempt_future_load_shedding(uint8_t core_id) {
             instance->tuned_deadlines[level];
       }
       new_job->actual_deadline = arrival_time + new_job->parent_task->deadline;
-      new_job->virtual_deadline =
-          new_job->arrival_time +
-          new_job
-              ->relative_tuned_deadlines[core_state->local_criticality_level];
+      new_job->virtual_deadline = new_job->actual_deadline;
       new_job->acet = generate_acet(new_job);
       new_job->wcet =
           (float)
@@ -342,13 +339,18 @@ void process_migration_requests(uint8_t core_id) {
 
     uint8_t from_core = mig_req.from_core;
 
-    if (!is_admissible(core_id, job_to_migrate, MIGRATION_PENALTY_TICKS)) {
+    double_rq_lock(core_id, from_core);
+
+    if (!is_admissible_locked(core_id, job_to_migrate,
+                              MIGRATION_PENALTY_TICKS)) {
       atomic_store_explicit(&job_to_migrate->is_being_offered, false,
                             memory_order_release);
       LOG(LOG_LEVEL_INFO,
           "Rejected migration of job %d to core %d due to inadmissibility",
           job_to_migrate->parent_task->id, core_id);
-      put_job_ref(job_to_migrate, from_core);
+      put_job_ref(job_to_migrate, core_id);
+
+      double_rq_unlock(core_id, from_core);
       continue;
     }
 
@@ -372,18 +374,19 @@ void process_migration_requests(uint8_t core_id) {
       job_to_migrate->next_migration_eligible_tick =
           proc_state.system_time + JOB_MIGRATION_COOLDOWN_TICKS;
 
+      double_rq_unlock(core_id, from_core);
       continue;
     }
 
-    double_rq_lock(core_id, from_core);
-
     if (job_to_migrate->link.prev != NULL &&
-        job_to_migrate->link.next != NULL) {
+        job_to_migrate->link.next != NULL &&
+        job_to_migrate->state == JOB_STATE_READY) {
       list_del(&job_to_migrate->link);
     } else {
       atomic_store_explicit(&job_to_migrate->is_being_offered, false,
                             memory_order_release);
-      put_job_ref(job_to_migrate, from_core);
+      put_job_ref(job_to_migrate, core_id);
+
       double_rq_unlock(core_id, from_core);
       continue;
     }
@@ -401,7 +404,8 @@ void process_migration_requests(uint8_t core_id) {
 
     atomic_store_explicit(&job_to_migrate->is_being_offered, false,
                           memory_order_release);
-    put_job_ref(job_to_migrate, from_core);
+
+    put_job_ref(job_to_migrate, core_id);
 
     LOG(LOG_LEVEL_INFO, "Migrated job %d from core %d to core %d",
         job_to_migrate->parent_task->id, from_core, core_id);

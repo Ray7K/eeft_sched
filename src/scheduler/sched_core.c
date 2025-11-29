@@ -33,6 +33,8 @@ const task_struct *task_lookup[MAX_TASKS + 1];
 static void handle_job_completion(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
   core_state->decision_point = true;
+
+  LOCK_RQ(core_id);
   job_struct *completed_job = core_state->running_job;
 
   if (completed_job == NULL) {
@@ -52,6 +54,8 @@ static void handle_job_completion(uint8_t core_id) {
   ring_buffer_enqueue(&proc_state.outgoing_completion_msg_queue, &outgoing_msg);
 
   core_state->running_job = NULL;
+  UNLOCK_RQ(core_id);
+
   core_state->is_idle = true;
   put_job_ref(completed_job, core_id);
 }
@@ -83,7 +87,6 @@ static void remove_completed_jobs(uint8_t core_id) {
             incoming_msg->completed_task_id);
       }
     }
-    UNLOCK_RQ(core_id);
 
     if (core_state->running_job != NULL &&
         core_state->running_job->parent_task->id ==
@@ -96,6 +99,8 @@ static void remove_completed_jobs(uint8_t core_id) {
       LOG(LOG_LEVEL_INFO, "Removed running job %d",
           incoming_msg->completed_task_id);
     }
+
+    UNLOCK_RQ(core_id);
   }
 }
 
@@ -109,25 +114,23 @@ static void handle_mode_change(uint8_t core_id,
 
   LOG(LOG_LEVEL_WARN, "Mode Change to %d", core_state->local_criticality_level);
 
+  LOCK_RQ(core_id);
+
   if (core_state->running_job != NULL) {
     job_struct *running_job = core_state->running_job;
     core_state->running_job = NULL;
     running_job->state = JOB_STATE_READY;
     core_state->is_idle = true;
 
-    LOCK_RQ(core_id);
     if (running_job->is_replica) {
       add_to_queue_sorted(&core_state->replica_queue, running_job);
     } else {
       add_to_queue_sorted(&core_state->ready_queue, running_job);
     }
-    UNLOCK_RQ(core_id);
   }
 
   LIST_HEAD(new_ready_queue);
   LIST_HEAD(new_replica_queue);
-
-  LOCK_RQ(core_id);
 
   while (!list_empty(&core_state->ready_queue)) {
     job_struct *current_job = pop_next_job(&core_state->ready_queue);
@@ -319,39 +322,59 @@ static void handle_job_arrivals(uint8_t core_id) {
 static void handle_running_job(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
 
+  bool trigger_completion = false;
+  bool trigger_mode_change = false;
+  criticality_level new_crit_level = 0;
+
+  LOCK_RQ(core_id);
+
   if (core_state->running_job != NULL) {
     core_state->running_job->executed_time +=
         power_get_current_scaling_factor(core_id);
 
-    // Incase job isn't able to meet deadline
     if (core_state->running_job->state == JOB_STATE_RUNNING &&
         proc_state.system_time > core_state->running_job->actual_deadline) {
-      LOG(LOG_LEVEL_ERROR, "Job %d missed its deadline %d",
-          core_state->running_job->parent_task->id,
-          core_state->running_job->actual_deadline);
+
+      uint32_t task_id = core_state->running_job->parent_task->id;
+      uint32_t deadline = core_state->running_job->actual_deadline;
+
+      UNLOCK_RQ(core_id);
+
+      LOG(LOG_LEVEL_ERROR, "Job %d missed its deadline %d", task_id, deadline);
       LOG(LOG_LEVEL_FATAL, "System Halted due to Deadline Miss");
       fputs("System Halted due to Deadline Miss\n", stderr);
       kill(getppid(), SIGINT);
+      return;
     }
 
     if (core_state->running_job->acet <=
         core_state->running_job->executed_time) {
-      handle_job_completion(core_id);
+      trigger_completion = true;
     } else if (core_state->running_job->wcet <=
                core_state->running_job->executed_time) {
-      criticality_level new_criticality_level =
-          core_state->local_criticality_level;
-      for (uint8_t level = new_criticality_level + 1;
-           level < MAX_CRITICALITY_LEVELS; level++) {
+
+      criticality_level current = core_state->local_criticality_level;
+      new_crit_level = current; // Default to current
+
+      for (uint8_t level = current + 1; level < MAX_CRITICALITY_LEVELS;
+           level++) {
         if (core_state->running_job->executed_time <
             (float)core_state->running_job->parent_task->wcet[level]) {
-          new_criticality_level = (criticality_level)level;
+          new_crit_level = (criticality_level)level;
           break;
         }
       }
-      ipc_broadcast_criticality_change(new_criticality_level);
-      handle_mode_change(core_id, new_criticality_level);
+      trigger_mode_change = true;
     }
+  }
+
+  UNLOCK_RQ(core_id);
+
+  if (trigger_completion) {
+    handle_job_completion(core_id);
+  } else if (trigger_mode_change) {
+    ipc_broadcast_criticality_change(new_crit_level);
+    handle_mode_change(core_id, new_crit_level);
   }
 }
 
@@ -402,23 +425,26 @@ static job_struct *select_next_job(uint8_t core_id) {
 static void dispatch_job(uint8_t core_id, job_struct *job_to_dispatch) {
   core_state *core_state = &core_states[core_id];
 
+  LOCK_RQ(core_id);
+
   if (core_state->running_job != NULL) {
     job_struct *current_job = core_state->running_job;
     LOG(LOG_LEVEL_INFO, "Preempting Job %d", current_job->parent_task->id);
     current_job->state = JOB_STATE_READY;
 
-    LOCK_RQ(core_id);
     if (current_job->is_replica) {
       add_to_queue_sorted(&core_state->replica_queue, current_job);
     } else {
       add_to_queue_sorted(&core_state->ready_queue, current_job);
     }
-    UNLOCK_RQ(core_id);
   }
 
   core_state->running_job = job_to_dispatch;
   core_state->is_idle = false;
   job_to_dispatch->state = JOB_STATE_RUNNING;
+
+  UNLOCK_RQ(core_id);
+
   LOG(LOG_LEVEL_INFO, "Dispatching Job %d", job_to_dispatch->parent_task->id);
 }
 
@@ -541,6 +567,7 @@ void scheduler_init(void) {
 static inline void log_core_state(uint8_t core_id) {
   core_state *core_state = &core_states[core_id];
 
+  LOCK_RQ(core_id);
   if (core_state->is_idle) {
     LOG(LOG_LEVEL_DEBUG, "Status: IDLE");
   } else {
@@ -555,7 +582,6 @@ static inline void log_core_state(uint8_t core_id) {
   LOG(LOG_LEVEL_DEBUG, "Criticality Level: %u",
       core_state->local_criticality_level);
 
-  LOCK_RQ(core_id);
   log_job_queue(LOG_LEVEL_DEBUG, "Ready Queue", &core_state->ready_queue);
   log_job_queue(LOG_LEVEL_DEBUG, "Replica Queue", &core_state->replica_queue);
   UNLOCK_RQ(core_id);
@@ -604,14 +630,7 @@ void scheduler_tick(uint8_t core_id) {
   }
 
   if (core_state->decision_point) {
-    if (core_state->running_job != NULL &&
-        core_state->running_job->parent_task->crit_level <
-            atomic_load(&proc_state.system_criticality_level)) {
-      power_set_dvfs_level(core_id, 0);
-    } else {
-      power_set_dvfs_level(core_id, calc_required_dvfs_level(core_id));
-    }
-    core_state->decision_point = false;
+    power_set_dvfs_level(core_id, calc_required_dvfs_level(core_id));
   }
 
   if (core_state->is_idle) {
