@@ -1,5 +1,4 @@
 # pyright: basic
-import copy
 import math
 from enum import IntEnum
 
@@ -56,53 +55,39 @@ class Core:
             return True
         crit_num = self.sys_config["criticality_levels"]["levels"][crit_level]
 
-        # Create a list of candidate tasks for this tuning operation
         all_candidates = self.assigned_primaries + self.assigned_replicas
         all_candidates.append(task)
 
-        # Filter candidates based on criticality
         initial_candidates = [
             t for t in all_candidates if t.criticality_level > crit_num
         ]
 
-        # No candidates to tune for this level
         if not initial_candidates:
             return True
 
-        # Store temporary virtual deadlines to avoid permanent changes on failure
-        temp_virtual_deadlines = {
-            t.id: list(t.virtual_deadline) for t in all_candidates
-        }
-
-        # Work on a mutable copy of the candidate list
         tuning_candidates = list(initial_candidates)
 
         mods = []
         periods = [t.period for t in all_candidates]
 
-        HYPERPERIOD_CAP_MULT = 100
-        hyperperiod = math.lcm(*periods)
-        hyperperiod = min(hyperperiod, max(periods) * HYPERPERIOD_CAP_MULT)
-
         m = crit_num
         m_prime = crit_num + 1
 
-        # Initial adjustment of virtual deadlines
-        for t in list(
-            tuning_candidates
-        ):  # Iterate over a copy as we might modify the list
-            d = min(
-                temp_virtual_deadlines[t.id][m], temp_virtual_deadlines[t.id][m_prime]
-            )
+        for t in list(tuning_candidates):
+            d = min(t.virtual_deadline[m], t.virtual_deadline[m_prime])
             if d < t.wcet[m]:
-                return False  # Fail without applying any changes
-            temp_virtual_deadlines[t.id][m] = d
+                return False
+            t.virtual_deadline[m] = d
             if d == t.wcet[m]:
                 tuning_candidates.remove(t)
 
         def dbf(t, m, m_prime, l):
             assert m == m_prime - 1
-            vd = temp_virtual_deadlines[t.id]
+
+            if l < 0:
+                return 0
+
+            vd = t.virtual_deadline
             dbf_val = 0
             if m == -1:
                 dbf_val = max(math.floor((l - vd[0]) / t.period) + 1, 0) * t.wcet[0]
@@ -118,20 +103,60 @@ class Core:
                 done = max(0, min(done, t.wcet[m_prime]))
                 dbf_val = full - done
 
-            # print("DBF", t.id, l, dbf_val)
             return max(0, dbf_val)
 
+        def compute_l_max(tasks, m, m_prime, cap):
+            def get_mode_l_max(task_subset, mode, is_hi_mode=False):
+                if not task_subset:
+                    return 0
+
+                util = sum(t.wcet[mode] / t.period for t in task_subset)
+                hyperperiod = math.lcm(*[t.period for t in task_subset])
+
+                if is_hi_mode:
+                    deadlines = [
+                        t.virtual_deadline[m_prime] - t.virtual_deadline[m]
+                        for t in task_subset
+                    ]
+                else:
+                    deadlines = [t.virtual_deadline[mode] for t in task_subset]
+
+                max_deadline = max(deadlines)
+                bound_hyper = hyperperiod + max_deadline
+
+                if util < 1:
+                    max_diff = max(t.period - d for t, d in zip(task_subset, deadlines))
+                    bound_density = (util / (1 - util)) * max_diff
+                    return min(bound_hyper, bound_density)
+                else:
+                    return bound_hyper
+
+            m_tasks = [t for t in tasks if t.criticality_level >= m]
+            mp_tasks = [t for t in tasks if t.criticality_level >= m_prime]
+
+            l_max_m = get_mode_l_max(m_tasks, m, is_hi_mode=False)
+            l_max_mp = get_mode_l_max(mp_tasks, m_prime, is_hi_mode=True)
+
+            return (
+                min(cap, int(max(l_max_m, l_max_mp)))
+                if cap > 0
+                else int(max(l_max_m, l_max_mp))
+            )
+
         changed = True
+
         while changed:
             changed = False
-            for l in range(hyperperiod + 1):
+            l_max = compute_l_max(all_candidates, m, m_prime, 10**6)
+
+            for l in range(0, l_max + 1):
                 if crit_level == "QM":
                     sum_dbf = sum(dbf(t, -1, 0, l) for t in all_candidates)
                     if sum_dbf > l:
                         if not mods:
                             return False
                         t = mods.pop()
-                        temp_virtual_deadlines[t.id][0] += 1
+                        t.virtual_deadline[0] += 1
                         if t not in tuning_candidates:
                             tuning_candidates.append(t)
                         tuning_candidates.remove(t)
@@ -155,20 +180,16 @@ class Core:
                             max_delta = a - b
                             target = t
 
-                    temp_virtual_deadlines[target.id][m] -= 1
+                    target.virtual_deadline[m] -= 1
                     mods.append(target)
-                    if temp_virtual_deadlines[target.id][m] == target.wcet[m]:
+                    if target.virtual_deadline[m] == target.wcet[m]:
                         tuning_candidates.remove(target)
                     changed = True
                     break
 
-        # If all checks passed, commit the changes
-        for t in initial_candidates:
-            t.virtual_deadline = temp_virtual_deadlines[t.id]
-
         return True
 
-    def _perform_tuning_check(self, task):
+    def tune_system(self, task, allocation_type, commit=True) -> bool:
         crit_levels = self.sys_config["criticality_levels"]["levels"]
         crit_levels_sorted = sorted(
             crit_levels.keys(), key=lambda k: crit_levels[k], reverse=True
@@ -176,6 +197,9 @@ class Core:
 
         affected_tasks = self.assigned_primaries + self.assigned_replicas + [task]
         original_vds = {t.id: list(t.virtual_deadline) for t in affected_tasks}
+
+        for task in affected_tasks:
+            task.reset_virtual_deadlines()
 
         success = True
         for level in crit_levels_sorted:
@@ -190,19 +214,18 @@ class Core:
                 success = False
                 break
 
-        return success, original_vds, affected_tasks
-
-    def tune_system(self, task, allocation_type) -> bool:
-        success, original_vds, affected_tasks = self._perform_tuning_check(task)
-
         if not success:
-            # If any check failed, restore all virtual deadlines from the backup
             for t in affected_tasks:
                 if t.id in original_vds:
                     t.virtual_deadline = original_vds[t.id]
             return False
 
-        # On complete success, add the task to the core
+        if not commit:
+            for t in affected_tasks:
+                if t.id in original_vds:
+                    t.virtual_deadline = original_vds[t.id]
+            return True
+
         if allocation_type == TaskType.Primary:
             self.assigned_primaries.append(task)
         if allocation_type == TaskType.Replica:
@@ -214,16 +237,6 @@ class Core:
                 self.utilization[level_name] += task.get_utilization(level_name)
 
         return True
-
-    def can_tune_system(self, task) -> bool:
-        success, original_vds, affected_tasks = self._perform_tuning_check(task)
-
-        # Always restore the original virtual deadlines for a 'dry run'
-        for t in affected_tasks:
-            if t.id in original_vds:
-                t.virtual_deadline = original_vds[t.id]
-
-        return success
 
 
 class TaskType(IntEnum):
@@ -249,14 +262,6 @@ class Task:
         ]
         self.utilization_tuple: tuple = self._calculate_utilization_tuple()
 
-    def _calculate_utilization_tuple(self) -> tuple:
-        """Creates a tuple of utilizations for all levels for sorting."""
-        crit_levels = sorted(
-            self._sys_config["criticality_levels"]["levels"].keys(),
-            key=lambda k: self._sys_config["criticality_levels"]["levels"][k],
-        )
-        return tuple(self.get_utilization(level) for level in crit_levels)
-
     def get_utilization(self, level_str: str) -> float:
         """Calculates the task's utilization for a specific criticality level string."""
         crit_level_map = self._sys_config["criticality_levels"]["levels"]
@@ -267,16 +272,18 @@ class Task:
         wcet_val = self.wcet[target_crit_num]
         return wcet_val / self.period
 
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            if k == "_sys_config":
-                setattr(result, k, v)  # Shallow copy
-            else:
-                setattr(result, k, copy.deepcopy(v, memo))  # Deep copy
-        return result
+    def reset_virtual_deadlines(self):
+        self.virtual_deadline = [
+            self.deadline for _ in range(len(self.virtual_deadline))
+        ]
+
+    def _calculate_utilization_tuple(self) -> tuple:
+        """Creates a tuple of utilizations for all levels for sorting."""
+        crit_levels = sorted(
+            self._sys_config["criticality_levels"]["levels"].keys(),
+            key=lambda k: self._sys_config["criticality_levels"]["levels"][k],
+        )
+        return tuple(self.get_utilization(level) for level in crit_levels)
 
 
 class Allocator:
@@ -346,60 +353,41 @@ class Allocator:
             proc_id = (start + offset) % self.num_procs_estimate
             proc = self.processors[proc_id]
             for core in proc.cores:
-                if core.can_tune_system(task) and not core.assigned_primaries:
-                    core.tune_system(copy.deepcopy(task), TaskType.Primary)
+                if core.tune_system(task, TaskType.Primary):
                     self.next_proc_index = (proc_id + 1) % self.num_procs_estimate
                     return True
-
-        min_num_of_primaries = float("inf")
-        chosen_core = None
-        chosen_proc = None
-
-        for proc_id in range(self.num_procs_estimate):
-            proc = self.processors[proc_id]
-            for core in proc.cores:
-                if core.can_tune_system(task):
-                    y = len(core.assigned_primaries)
-                    if y < min_num_of_primaries:
-                        min_num_of_primaries = y
-                        chosen_core = core
-                        chosen_proc = proc
-
-        if chosen_core and chosen_proc:
-            chosen_core.tune_system(copy.deepcopy(task), TaskType.Primary)
-            self.next_proc_index = (chosen_proc.id + 1) % self.num_procs_estimate
-            return True
 
         return False
 
     def allocate_replica(self, task):
+        start = self.next_proc_index
         primary_proc = self.find_processor_of_primary(task.id)
         if not primary_proc:
             raise Exception(
                 f"Cannot allocate replica for Task {task.id}, primary not found."
             )
-        for proc_id in range(self.num_procs_estimate):
+        for offset in range(self.num_procs_estimate):
+            proc_id = (start + offset) % self.num_procs_estimate
             proc = self.processors[proc_id]
             if proc.id == primary_proc.id or proc.contains_task_replica(task.id):
                 continue
 
             for core in proc.cores:
-                if core.can_tune_system(task):
-                    is_safe = True
-                    if task.replicas == 1:
-                        for other_primary in core.assigned_primaries:
-                            if primary_proc.contains_task_replica(other_primary.id):
-                                is_safe = False
-                                break
-                    if is_safe:
-                        core.tune_system(copy.deepcopy(task), TaskType.Replica)
-                        return True
+                is_safe = True
+                if task.replicas == 1:
+                    for other_primary in core.assigned_primaries:
+                        if primary_proc.contains_task_replica(other_primary.id):
+                            is_safe = False
+                            break
+                if is_safe and core.tune_system(task, TaskType.Replica):
+                    self.next_proc_index = (proc_id + 1) % self.num_procs_estimate
+                    return True
         return False
 
     def allocate_tasks(self, taskset):
         for task in taskset:
+            print(f"  Allocating Task {task.id} ({task.name})")
             while not self.allocate_primary(task):
-                print(f"trying to allocate {task.id}")
                 self.num_procs_estimate += 1
 
                 if (
@@ -409,6 +397,7 @@ class Allocator:
                     raise Exception("Insufficient processors to allocate all tasks.")
 
             for _ in range(task.replicas):
+
                 while not self.allocate_replica(task):
                     self.num_procs_estimate += 1
 
@@ -435,7 +424,6 @@ def format_array(arr, max_levels):
     if len(arr) > max_levels:
         raise ValueError("Task has more WCET entries than MAX_CRITICALITY_LEVELS")
 
-    # Pad the list with 0s to match the required array size in C
     padded_arr = arr + [0] * (max_levels - len(arr))
     return f"{{ {', '.join(map(str, padded_arr))} }}"
 
@@ -472,7 +460,6 @@ def generate_sys_config_h(sys_config):
 
 
 def generate_task_config_c(allocator: Allocator):
-    # Generate the static task definitions
     task_definitions = []
     max_crit_levels = allocator.sys_config["criticality_levels"]["max_levels"]
     for t in allocator.tasks:
@@ -489,7 +476,6 @@ def generate_task_config_c(allocator: Allocator):
         )
         task_definitions.append(task_def)
 
-    # Generate the allocation map
     map_entries = []
     for proc in allocator.processors:
         for core in proc.cores:
@@ -648,14 +634,11 @@ def generate_utilization_stacked_chart(
     num_procs = len(processors)
     num_cores = allocator.sys_config["system"]["num_cores_per_processor"]
 
-    # Get the criticality levels sorted from low to high for plotting
     crit_levels = sorted(
         allocator.sys_config["criticality_levels"]["levels"].keys(),
         key=lambda k: allocator.sys_config["criticality_levels"]["levels"][k],
     )
 
-    # --- Prepare the data for plotting ---
-    # Create a dictionary to hold the utilization data for each level
     util_data = {level: [] for level in crit_levels}
     core_labels = []
 
@@ -665,25 +648,24 @@ def generate_utilization_stacked_chart(
             for level in crit_levels:
                 util_data[level].append(core.utilization.get(level, 0.0))
 
-    # --- Create the plot ---
-    width = 0.6  # Width of the bars
+    width = 0.6 
     fig, ax = plt.subplots(figsize=(16, 8))
-    bottom = np.zeros(num_procs * num_cores)  # Start the first bar at the bottom
+    bottom = np.zeros(num_procs * num_cores) 
 
     for level in crit_levels:
         util_values = np.array(util_data[level])
         ax.bar(core_labels, util_values, width, label=level, bottom=bottom)
-        bottom += util_values  # Stack the next bar on top of the current one
+        bottom += util_values  
 
     # --- Customize and save the plot ---
     ax.set_title("Per-Core Utilization by Criticality Level", fontsize=16)
     ax.set_ylabel("Cumulative Utilization")
     ax.set_xlabel("Processor and Core ID")
-    ax.set_ylim(0, max(1.1, bottom.max() * 1.1))  # Set y-axis limit
+    ax.set_ylim(0, max(1.1, bottom.max() * 1.1))
     ax.legend(title="Criticality Level")
 
-    plt.xticks(rotation=45, ha="right")  # Rotate x-axis labels for readability
-    plt.tight_layout()  # Adjust layout to prevent labels from overlapping
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
     plt.savefig(filename)
     plt.close()
 
@@ -709,8 +691,8 @@ def generate_utilization_grouped_chart(
         for level in crit_levels
     }
 
-    x = np.arange(len(core_labels))  # the label locations
-    width = 0.15  # the width of the bars
+    x = np.arange(len(core_labels))  
+    width = 0.15  
     multiplier = 0
 
     fig, ax = plt.subplots(figsize=(20, 8))
@@ -741,11 +723,9 @@ def generate_reports(allocator: Allocator):
     """Orchestrates the creation of all reports and visualizations."""
     print("\n--- Generating Reports and Visualizations ---")
 
-    # Create subdirectories
     heatmap_dir = f"{REPORT_PATH}/heatmaps"
     os.makedirs(heatmap_dir, exist_ok=True)
 
-    # Generate reports
     write_allocation_report(allocator, f"{REPORT_PATH}/allocation_report.txt")
     generate_utilization_heatmaps(allocator, heatmap_dir)
     generate_utilization_stacked_chart(allocator, f"{REPORT_PATH}/stacked_chart.png")
@@ -757,7 +737,6 @@ def main():
     global sys_config
     print("--- Task Allocator ---")
 
-    # 1. Parse YAML files
     with open(SYS_CONFIG_PATH, "r") as f:
         sys_config = yaml.safe_load(f)
     with open(TASK_CONFIG_PATH, "r") as f:
@@ -768,19 +747,15 @@ def main():
         print("No tasks found. Exiting.")
         return
 
-    # 2. Generate config.h
     generate_sys_config_h(sys_config)
 
-    # 3. Perform allocation
     allocator = Allocator(sys_config, [Task(t, sys_config) for t in tasks])
     allocator.run()
     print("Allocation complete")
 
-    # 4. Generate task_config.h and task_config.c
     generate_task_config_c(allocator)
     print("C source/header files generation complete")
 
-    # 5. Reporting and Visualization
     generate_reports(allocator)
     print("Report generation complete")
 
