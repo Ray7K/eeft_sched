@@ -466,9 +466,6 @@ float find_slack(uint8_t core_id, criticality_level crit_lvl, uint32_t tstart,
                   extra_job->executed_time;
       if (vdl <= d) {
         demand += fmaxf(0.0f, rem / scaling_factor);
-      } else if (extra_job->arrival_time < d) {
-        float available_before_d = (float)(d - extra_job->arrival_time);
-        demand += fminf(fmaxf(0.0f, rem / scaling_factor), available_before_d);
       }
     }
 
