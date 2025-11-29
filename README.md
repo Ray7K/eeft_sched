@@ -23,8 +23,6 @@ for configuration, task generation, offline allocation, and log analysis.
   - taskset generation
   - offline task allocation
   - log parsing and visualization
-- **Robust Build System** with debug, release, and profile builds
-- **Sanitizer Support**: ASAN, TSAN, UBSAN (UBSAN default)
 - **Custom Test Framework**
 
 ## Requirements
