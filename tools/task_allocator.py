@@ -51,9 +51,9 @@ class Core:
         self.sys_config = sys_config
 
     def tune_mode(self, task, crit_level) -> bool:
-        if crit_level == "ASIL_D":
-            return True
         crit_num = self.sys_config["criticality_levels"]["levels"][crit_level]
+        if crit_num == self.sys_config["criticality_levels"]["max_levels"] - 1:
+            return True
 
         all_candidates = self.assigned_primaries + self.assigned_replicas
         all_candidates.append(task)
@@ -68,7 +68,6 @@ class Core:
         tuning_candidates = list(initial_candidates)
 
         mods = []
-        periods = [t.period for t in all_candidates]
 
         m = crit_num
         m_prime = crit_num + 1
@@ -150,7 +149,7 @@ class Core:
             l_max = compute_l_max(all_candidates, m, m_prime, 10**6)
 
             for l in range(0, l_max + 1):
-                if crit_level == "QM":
+                if crit_num == 0:
                     sum_dbf = sum(dbf(t, -1, 0, l) for t in all_candidates)
                     if sum_dbf > l:
                         if not mods:
@@ -386,7 +385,6 @@ class Allocator:
 
     def allocate_tasks(self, taskset):
         for task in taskset:
-            print(f"  Allocating Task {task.id} ({task.name})")
             while not self.allocate_primary(task):
                 self.num_procs_estimate += 1
 
@@ -648,14 +646,14 @@ def generate_utilization_stacked_chart(
             for level in crit_levels:
                 util_data[level].append(core.utilization.get(level, 0.0))
 
-    width = 0.6 
+    width = 0.6
     fig, ax = plt.subplots(figsize=(16, 8))
-    bottom = np.zeros(num_procs * num_cores) 
+    bottom = np.zeros(num_procs * num_cores)
 
     for level in crit_levels:
         util_values = np.array(util_data[level])
         ax.bar(core_labels, util_values, width, label=level, bottom=bottom)
-        bottom += util_values  
+        bottom += util_values
 
     # --- Customize and save the plot ---
     ax.set_title("Per-Core Utilization by Criticality Level", fontsize=16)
@@ -691,8 +689,8 @@ def generate_utilization_grouped_chart(
         for level in crit_levels
     }
 
-    x = np.arange(len(core_labels))  
-    width = 0.15  
+    x = np.arange(len(core_labels))
+    width = 0.15
     multiplier = 0
 
     fig, ax = plt.subplots(figsize=(20, 8))
