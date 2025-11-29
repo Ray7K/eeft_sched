@@ -32,14 +32,14 @@ float power_get_current_scaling_factor(uint8_t core_id) {
 }
 
 uint8_t calc_required_dvfs_level(uint8_t core_id) {
-  core_state *core_state = &core_states[core_id];
-  if (core_state->is_idle || core_state->running_job == NULL)
+  core_state *cs = &core_states[core_id];
+  if (cs->is_idle || cs->running_job == NULL)
     return NUM_DVFS_LEVELS - 1; // lowest power state
 
   uint32_t now = proc_state.system_time;
   float min_slack = FLT_MAX;
 
-  for (uint8_t crit_lvl = core_state->local_criticality_level;
+  for (uint8_t crit_lvl = cs->local_criticality_level;
        crit_lvl < MAX_CRITICALITY_LEVELS; crit_lvl++) {
     float slack = find_slack(core_id, crit_lvl, now, 1.0f, NULL);
     if (slack < min_slack) {
@@ -51,9 +51,9 @@ uint8_t calc_required_dvfs_level(uint8_t core_id) {
     return 0;
   }
 
-  float remaining_hi = (float)core_state->running_job->parent_task
-                           ->wcet[MAX_CRITICALITY_LEVELS - 1] -
-                       core_state->running_job->executed_time;
+  float remaining_hi =
+      (float)cs->running_job->parent_task->wcet[MAX_CRITICALITY_LEVELS - 1] -
+      cs->running_job->executed_time;
 
   int8_t best_level = 0;
 
@@ -86,21 +86,21 @@ uint8_t power_get_current_dvfs_level(uint8_t core_id) {
 
 void power_management_set_dpm_interval(uint8_t core_id,
                                        uint32_t next_arrival_time) {
-  core_state *core_state = &core_states[core_id];
+  core_state *cs = &core_states[core_id];
   uint32_t now = proc_state.system_time;
 
-  if (!core_state->is_idle)
+  if (!cs->is_idle)
     return;
 
-  if (core_state->dpm_control_block.in_low_power_state)
+  if (cs->dpm_control_block.in_low_power_state)
     return;
 
   if (next_arrival_time == UINT32_MAX || next_arrival_time <= now) {
     LOG(LOG_LEVEL_INFO,
         "No upcoming task arrivals. Entering indefinite low power state...");
-    core_state->dpm_control_block.in_low_power_state = true;
-    core_state->dpm_control_block.dpm_start_time = now;
-    core_state->dpm_control_block.dpm_end_time = UINT32_MAX;
+    cs->dpm_control_block.in_low_power_state = true;
+    cs->dpm_control_block.dpm_start_time = now;
+    cs->dpm_control_block.dpm_end_time = UINT32_MAX;
     return;
   }
 
@@ -108,19 +108,19 @@ void power_management_set_dpm_interval(uint8_t core_id,
 
   if (slack >= DPM_IDLE_THRESHOLD_TICKS + DPM_ENTRY_LATENCY_TICKS +
                    DPM_EXIT_LATENCY_TICKS) {
-    core_state->dpm_control_block.in_low_power_state = true;
-    core_state->dpm_control_block.dpm_start_time = now;
-    core_state->dpm_control_block.dpm_end_time = now + (uint32_t)floorf(slack);
+    cs->dpm_control_block.in_low_power_state = true;
+    cs->dpm_control_block.dpm_start_time = now;
+    cs->dpm_control_block.dpm_end_time = now + (uint32_t)floorf(slack);
     LOG(LOG_LEVEL_INFO,
         "Found Slack %.2f. Entering DPM for interval %u–%u ticks...", slack,
-        core_state->dpm_control_block.dpm_start_time,
-        core_state->dpm_control_block.dpm_end_time);
+        cs->dpm_control_block.dpm_start_time,
+        cs->dpm_control_block.dpm_end_time);
   }
 }
 
 bool power_management_try_procrastination(uint8_t core_id) {
 
-  core_state *core_state = &core_states[core_id];
+  core_state *cs = &core_states[core_id];
 
   uint32_t min_arrival_time = find_next_effective_arrival_time(core_id);
 
@@ -147,7 +147,7 @@ bool power_management_try_procrastination(uint8_t core_id) {
 
   dvfs_level min_dvfs_level = dvfs_levels[NUM_DVFS_LEVELS - 1];
 
-  for (uint8_t level = core_state->local_criticality_level;
+  for (uint8_t level = cs->local_criticality_level;
        level < MAX_CRITICALITY_LEVELS; level++) {
     float slack = find_slack(core_id, level, proc_state.system_time,
                              min_dvfs_level.scaling_factor, NULL);
@@ -167,23 +167,22 @@ bool power_management_try_procrastination(uint8_t core_id) {
 
   float deferrable_time = fminf(min_slack, time_until_next_arrival);
 
-  if (core_state->running_job == NULL) {
+  if (cs->running_job == NULL) {
     LOG(LOG_LEVEL_INFO, "Core is already idle, no need to procrastinate");
     return false;
   }
 
-  LOG(LOG_LEVEL_INFO, "Preempting Job %d",
-      core_state->running_job->parent_task->id);
-  core_state->running_job->state = JOB_STATE_READY;
+  LOG(LOG_LEVEL_INFO, "Preempting Job %d", cs->running_job->parent_task->id);
+  cs->running_job->state = JOB_STATE_READY;
 
   LOCK_RQ(core_id);
-  if (core_state->running_job->is_replica) {
-    add_to_queue_sorted(&core_state->replica_queue, core_state->running_job);
+  if (cs->running_job->is_replica) {
+    add_to_queue_sorted(&cs->replica_queue, cs->running_job);
   } else {
-    add_to_queue_sorted(&core_state->ready_queue, core_state->running_job);
+    add_to_queue_sorted(&cs->ready_queue, cs->running_job);
   }
-  core_state->running_job = NULL;
-  core_state->is_idle = true;
+  cs->running_job = NULL;
+  cs->is_idle = true;
   UNLOCK_RQ(core_id);
 
   power_management_set_dpm_interval(

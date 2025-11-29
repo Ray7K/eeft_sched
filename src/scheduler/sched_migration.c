@@ -80,14 +80,13 @@ static inline void add_delegation_sorted(delegated_job *dj, uint8_t core_id) {
 }
 
 void update_delegations(uint8_t core_id) {
-  core_state *core_state = &core_states[core_id];
+  core_state *cs = &core_states[core_id];
 
   delegation_ack ack;
-  while (ring_buffer_try_dequeue(&core_state->delegation_ack_queue, &ack) ==
-         0) {
+  while (ring_buffer_try_dequeue(&cs->delegation_ack_queue, &ack) == 0) {
 
     delegated_job *dj;
-    list_for_each_entry(dj, &core_state->delegated_job_queue, link) {
+    list_for_each_entry(dj, &cs->delegated_job_queue, link) {
       if (dj->task_id == ack.task_id && dj->arrival_tick == ack.arrival_tick) {
         if (ack.accepted) {
           dj->owned_by_remote = true;
@@ -145,13 +144,12 @@ static inline uint8_t find_best_core_for_migration(job_struct *job,
   return best_core;
 }
 
-static inline void attempt_rq_load_shedding(uint8_t core_id) {
-  core_state *core_state = &core_states[core_id];
+static inline void try_offload_jobs_from_queue(struct list_head *queue,
+                                               uint8_t core_id) {
 
   job_struct *job;
 
-  LOCK_RQ(core_id);
-  list_for_each_entry_rev(job, &core_state->ready_queue, link) {
+  list_for_each_entry(job, queue, link) {
 
     if (!is_migration_profitable(job, proc_state.system_time)) {
       continue;
@@ -176,52 +174,30 @@ static inline void attempt_rq_load_shedding(uint8_t core_id) {
     LOG(LOG_LEVEL_INFO, "Offered job %d to core %d", job->parent_task->id,
         dest_core_id);
   }
-  list_for_each_entry_rev(job, &core_state->replica_queue, link) {
+}
 
-    if (!is_migration_profitable(job, proc_state.system_time)) {
-      continue;
-    }
+static inline void attempt_rq_load_shedding(uint8_t core_id) {
+  core_state *cs = &core_states[core_id];
 
-    if (atomic_exchange(&job->is_being_offered, true)) {
-      continue;
-    }
-
-    uint8_t dest_core_id = find_best_core_for_migration(job, core_id);
-
-    if (dest_core_id == core_id) {
-      atomic_store_explicit(&job->is_being_offered, false,
-                            memory_order_release);
-      continue;
-    }
-
-    migration_request mig_req = {.job = get_job_ref(job), .from_core = core_id};
-    ring_buffer *dest_queue =
-        &core_states[dest_core_id].migration_request_queue;
-    ring_buffer_enqueue(dest_queue, &mig_req);
-
-    core_state->next_migration_eligible_tick =
-        proc_state.system_time + CORE_MIGRATION_COOLDOWN_TICKS;
-
-    LOG(LOG_LEVEL_INFO, "Offered replica job %d to core %d",
-        job->parent_task->id, dest_core_id);
-  }
+  LOCK_RQ(core_id);
+  try_offload_jobs_from_queue(&cs->ready_queue, core_id);
+  try_offload_jobs_from_queue(&cs->replica_queue, core_id);
   UNLOCK_RQ(core_id);
 }
 
 static inline void attempt_future_load_shedding(uint8_t core_id) {
-  core_state *core_state = &core_states[core_id];
+  core_state *cs = &core_states[core_id];
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
     const task_alloc_map *instance = &allocation_map[i];
 
-    if (instance->proc_id == core_state->proc_id &&
-        instance->core_id == core_state->core_id) {
+    if (instance->proc_id == cs->proc_id && instance->core_id == cs->core_id) {
       const task_struct *task = find_task_by_id(instance->task_id);
 
       if (task == NULL) {
         continue;
       }
 
-      if ((float)task->wcet[core_state->local_criticality_level] <
+      if ((float)task->wcet[cs->local_criticality_level] <
           MIN_MIGRATION_BENEFIT_THRESHOLD) {
         continue;
       }
@@ -235,7 +211,7 @@ static inline void attempt_future_load_shedding(uint8_t core_id) {
       }
 
       delegated_job *dj;
-      list_for_each_entry(dj, &core_state->delegated_job_queue, link) {
+      list_for_each_entry(dj, &cs->delegated_job_queue, link) {
         if (dj->task_id == task->id && dj->arrival_tick == arrival_time) {
           goto skip;
         }
@@ -259,8 +235,7 @@ static inline void attempt_future_load_shedding(uint8_t core_id) {
       new_job->virtual_deadline = new_job->actual_deadline;
       new_job->acet = generate_acet(new_job);
       new_job->wcet =
-          (float)
-              new_job->parent_task->wcet[core_state->local_criticality_level];
+          (float)new_job->parent_task->wcet[cs->local_criticality_level];
       new_job->executed_time = 0;
 
       new_job->is_replica = (instance->task_type == Replica);
@@ -291,7 +266,7 @@ static inline void attempt_future_load_shedding(uint8_t core_id) {
       ring_buffer_enqueue(&core_states[best_core_id].migration_request_queue,
                           &mig_req);
 
-      core_state->next_migration_eligible_tick =
+      cs->next_migration_eligible_tick =
           proc_state.system_time + CORE_MIGRATION_COOLDOWN_TICKS;
 
       LOG(LOG_LEVEL_INFO, "Offering future job %d arriving at %d",
@@ -304,18 +279,17 @@ static inline void attempt_future_load_shedding(uint8_t core_id) {
 
 void attempt_migration_push(uint8_t core_id) {
 
-  core_state *core_state = &core_states[core_id];
+  core_state *cs = &core_states[core_id];
   float util = get_util(core_id);
 
-  if (!core_state->is_idle &&
-      core_state->next_migration_eligible_tick <= proc_state.system_time &&
+  if (!cs->is_idle &&
+      cs->next_migration_eligible_tick <= proc_state.system_time &&
       util < LIGHT_DONOR_UTIL_THRESHOLD) {
 
     bool is_about_to_become_idle = false;
 
     LOCK_RQ(core_id);
-    if (list_empty(&core_state->ready_queue) &&
-        list_empty(&core_state->replica_queue)) {
+    if (list_empty(&cs->ready_queue) && list_empty(&cs->replica_queue)) {
       is_about_to_become_idle = true;
     }
     UNLOCK_RQ(core_id);
@@ -330,8 +304,8 @@ void attempt_migration_push(uint8_t core_id) {
 }
 
 void process_migration_requests(uint8_t core_id) {
-  core_state *core_st = &core_states[core_id];
-  ring_buffer *mig_queue = &core_st->migration_request_queue;
+  core_state *cs = &core_states[core_id];
+  ring_buffer *mig_queue = &cs->migration_request_queue;
 
   migration_request mig_req;
   while (ring_buffer_try_dequeue(mig_queue, &mig_req) == 0) {
@@ -357,8 +331,7 @@ void process_migration_requests(uint8_t core_id) {
     if (job_to_migrate->state == JOB_STATE_IDLE &&
         job_to_migrate->arrival_time > proc_state.system_time) {
 
-      add_to_queue_sorted_by_arrival(&core_st->pending_jobs_queue,
-                                     job_to_migrate);
+      add_to_queue_sorted_by_arrival(&cs->pending_jobs_queue, job_to_migrate);
 
       delegation_ack ack = {.task_id = job_to_migrate->parent_task->id,
                             .arrival_tick = job_to_migrate->arrival_time,
@@ -391,13 +364,12 @@ void process_migration_requests(uint8_t core_id) {
       continue;
     }
 
-    if (job_to_migrate->parent_task->crit_level <
-        core_st->local_criticality_level) {
-      add_to_queue_sorted(&core_st->discard_list, job_to_migrate);
+    if (job_to_migrate->parent_task->crit_level < cs->local_criticality_level) {
+      add_to_queue_sorted(&cs->discard_list, job_to_migrate);
     } else if (job_to_migrate->is_replica) {
-      add_to_queue_sorted(&core_st->replica_queue, job_to_migrate);
+      add_to_queue_sorted(&cs->replica_queue, job_to_migrate);
     } else {
-      add_to_queue_sorted(&core_st->ready_queue, job_to_migrate);
+      add_to_queue_sorted(&cs->ready_queue, job_to_migrate);
     }
 
     double_rq_unlock(core_id, from_core);
