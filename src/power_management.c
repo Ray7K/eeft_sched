@@ -167,7 +167,10 @@ bool power_management_try_procrastination(uint8_t core_id) {
 
   float deferrable_time = fminf(min_slack, time_until_next_arrival);
 
+  LOCK_RQ(core_id);
+
   if (cs->running_job == NULL) {
+    UNLOCK_RQ(core_id);
     LOG(LOG_LEVEL_INFO, "Core is already idle, no need to procrastinate");
     return false;
   }
@@ -175,7 +178,6 @@ bool power_management_try_procrastination(uint8_t core_id) {
   LOG(LOG_LEVEL_INFO, "Preempting Job %d", cs->running_job->parent_task->id);
   cs->running_job->state = JOB_STATE_READY;
 
-  LOCK_RQ(core_id);
   if (cs->running_job->is_replica) {
     add_to_queue_sorted(&cs->replica_queue, cs->running_job);
   } else {
@@ -183,6 +185,7 @@ bool power_management_try_procrastination(uint8_t core_id) {
   }
   cs->running_job = NULL;
   cs->is_idle = true;
+
   UNLOCK_RQ(core_id);
 
   power_management_set_dpm_interval(
