@@ -92,7 +92,7 @@ static void remove_completed_jobs(uint8_t core_id) {
         cs->running_job->parent_task->id == incoming_msg->completed_task_id) {
       job_struct *running_job = cs->running_job;
       cs->running_job = NULL;
-      running_job->state = JOB_STATE_COMPLETED;
+      running_job->state = JOB_STATE_REMOVED;
       put_job_ref(running_job, core_id);
       cs->is_idle = true;
       LOG(LOG_LEVEL_INFO, "Removed running job %d",
