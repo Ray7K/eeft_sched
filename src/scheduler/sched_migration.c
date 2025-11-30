@@ -232,7 +232,9 @@ static inline void attempt_future_load_shedding(uint8_t core_id) {
             instance->tuned_deadlines[level];
       }
       new_job->actual_deadline = arrival_time + new_job->parent_task->deadline;
-      new_job->virtual_deadline = new_job->actual_deadline;
+      new_job->virtual_deadline =
+          new_job->arrival_time +
+          new_job->relative_tuned_deadlines[cs->local_criticality_level];
       new_job->acet = generate_acet(new_job);
       new_job->wcet =
           (float)new_job->parent_task->wcet[cs->local_criticality_level];
@@ -337,6 +339,12 @@ void process_migration_requests(uint8_t core_id) {
                             .arrival_tick = job_to_migrate->arrival_time,
                             .accepted = true};
 
+      job_to_migrate->virtual_deadline =
+          job_to_migrate->arrival_time +
+          job_to_migrate->relative_tuned_deadlines[cs->local_criticality_level];
+      job_to_migrate->wcet =
+          (float)job_to_migrate->parent_task->wcet[cs->local_criticality_level];
+
       ring_buffer_enqueue(&core_states[from_core].delegation_ack_queue, &ack);
 
       atomic_store_explicit(&job_to_migrate->is_being_offered, false,
@@ -363,6 +371,12 @@ void process_migration_requests(uint8_t core_id) {
       double_rq_unlock(core_id, from_core);
       continue;
     }
+
+    job_to_migrate->virtual_deadline =
+        job_to_migrate->arrival_time +
+        job_to_migrate->relative_tuned_deadlines[cs->local_criticality_level];
+    job_to_migrate->wcet =
+        (float)job_to_migrate->parent_task->wcet[cs->local_criticality_level];
 
     if (job_to_migrate->parent_task->crit_level < cs->local_criticality_level) {
       add_to_queue_sorted(&cs->discard_list, job_to_migrate);

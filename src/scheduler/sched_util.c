@@ -93,13 +93,9 @@ static uint32_t calculate_horizon(uint8_t core_id) {
   return horizon;
 }
 
-static inline uint32_t get_job_deadline(const job_struct *job, uint8_t core_id,
+static inline uint32_t get_job_deadline(const job_struct *job,
                                         criticality_level crit_lvl) {
-  if (job->job_pool_id != core_id) {
-    return job->actual_deadline;
-  } else {
-    return job->arrival_time + job->relative_tuned_deadlines[crit_lvl];
-  }
+  return job->arrival_time + job->relative_tuned_deadlines[crit_lvl];
 }
 
 static inline void add_deadline_to_array(uint32_t d, uint32_t tstart,
@@ -110,26 +106,25 @@ static inline void add_deadline_to_array(uint32_t d, uint32_t tstart,
   }
 }
 
-static inline void process_job_deadline(const job_struct *job, uint8_t core_id,
+static inline void process_job_deadline(const job_struct *job,
                                         criticality_level crit_lvl,
                                         uint32_t tstart, uint32_t *deadlines,
                                         uint32_t *count,
                                         uint32_t max_deadlines) {
   if (job) {
-    uint32_t d = get_job_deadline(job, core_id, crit_lvl);
+    uint32_t d = get_job_deadline(job, crit_lvl);
     add_deadline_to_array(d, tstart, deadlines, count, max_deadlines);
   }
 }
 
 static inline void process_queue_deadlines(struct list_head *queue,
-                                           uint8_t core_id,
                                            criticality_level crit_lvl,
                                            uint32_t tstart, uint32_t *deadlines,
                                            uint32_t *count,
                                            uint32_t max_deadlines) {
   job_struct *job;
   list_for_each_entry(job, queue, link) {
-    process_job_deadline(job, core_id, crit_lvl, tstart, deadlines, count,
+    process_job_deadline(job, crit_lvl, tstart, deadlines, count,
                          max_deadlines);
   }
 }
@@ -146,17 +141,17 @@ static uint32_t collect_active_and_future_deadlines(
   uint32_t count = 0;
   uint32_t horizon = calculate_horizon(core_id);
 
-  process_job_deadline(extra_job, core_id, crit_lvl, tstart, deadlines, &count,
+  process_job_deadline(extra_job, crit_lvl, tstart, deadlines, &count,
                        max_deadlines);
-  process_job_deadline(core_state->running_job, core_id, crit_lvl, tstart,
-                       deadlines, &count, max_deadlines);
+  process_job_deadline(core_state->running_job, crit_lvl, tstart, deadlines,
+                       &count, max_deadlines);
 
-  process_queue_deadlines(&core_state->ready_queue, core_id, crit_lvl, tstart,
+  process_queue_deadlines(&core_state->ready_queue, crit_lvl, tstart, deadlines,
+                          &count, max_deadlines);
+  process_queue_deadlines(&core_state->replica_queue, crit_lvl, tstart,
                           deadlines, &count, max_deadlines);
-  process_queue_deadlines(&core_state->replica_queue, core_id, crit_lvl, tstart,
+  process_queue_deadlines(&core_state->pending_jobs_queue, crit_lvl, tstart,
                           deadlines, &count, max_deadlines);
-  process_queue_deadlines(&core_state->pending_jobs_queue, core_id, crit_lvl,
-                          tstart, deadlines, &count, max_deadlines);
 
   for (uint32_t i = 0; i < ALLOCATION_MAP_SIZE; i++) {
     const task_alloc_map *m = &allocation_map[i];
@@ -195,14 +190,10 @@ static uint32_t collect_active_and_future_deadlines(
 }
 
 static inline float calculate_job_demand(const job_struct *j,
-                                         uint8_t current_core_id,
                                          criticality_level crit_lvl, uint32_t d,
                                          float scaling_factor) {
-  uint32_t vdl =
-      (j->job_pool_id != current_core_id)
-          ? j->actual_deadline
-          : (j->arrival_time + j->relative_tuned_deadlines[crit_lvl]);
 
+  uint32_t vdl = j->arrival_time + j->relative_tuned_deadlines[crit_lvl];
   if (vdl <= d) {
     float wcet = (float)j->parent_task->wcet[crit_lvl];
     float exec = j->executed_time;
@@ -239,25 +230,24 @@ static float __find_slack(uint8_t core_id, criticality_level crit_lvl,
     job_struct *job;
 
     if (core_state->running_job) {
-      demand += calculate_job_demand(core_state->running_job, core_id, crit_lvl,
-                                     d, scaling_factor);
+      demand += calculate_job_demand(core_state->running_job, crit_lvl, d,
+                                     scaling_factor);
     }
 
     list_for_each_entry(job, &core_state->ready_queue, link) {
-      demand += calculate_job_demand(job, core_id, crit_lvl, d, scaling_factor);
+      demand += calculate_job_demand(job, crit_lvl, d, scaling_factor);
     }
 
     list_for_each_entry(job, &core_state->replica_queue, link) {
-      demand += calculate_job_demand(job, core_id, crit_lvl, d, scaling_factor);
+      demand += calculate_job_demand(job, crit_lvl, d, scaling_factor);
     }
 
     list_for_each_entry(job, &core_state->pending_jobs_queue, link) {
-      demand += calculate_job_demand(job, core_id, crit_lvl, d, scaling_factor);
+      demand += calculate_job_demand(job, crit_lvl, d, scaling_factor);
     }
 
     if (extra_job) {
-      demand +=
-          calculate_job_demand(extra_job, core_id, crit_lvl, d, scaling_factor);
+      demand += calculate_job_demand(extra_job, crit_lvl, d, scaling_factor);
     }
 
     for (uint32_t k = 0; k < ALLOCATION_MAP_SIZE; k++) {

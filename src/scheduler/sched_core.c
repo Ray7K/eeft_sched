@@ -163,7 +163,6 @@ static void handle_job_arrivals(uint8_t core_id) {
   core_state *cs = &core_states[core_id];
 
   job_struct *new_job, *next;
-  log_job_queue(LOG_LEVEL_DEBUG, "Pending Jobs", &cs->pending_jobs_queue);
   list_for_each_entry_safe(new_job, next, &cs->pending_jobs_queue, link) {
     if (new_job->arrival_time < proc_state.system_time) {
       if (new_job->parent_task->crit_level < cs->local_criticality_level) {
@@ -181,6 +180,13 @@ static void handle_job_arrivals(uint8_t core_id) {
     }
 
     list_del(&new_job->link);
+
+    new_job->state = JOB_STATE_READY;
+    new_job->virtual_deadline =
+        proc_state.system_time +
+        new_job->relative_tuned_deadlines[cs->local_criticality_level];
+    new_job->wcet =
+        (float)new_job->parent_task->wcet[cs->local_criticality_level];
 
     LOG(LOG_LEVEL_INFO,
         "Job %d (from pending) arrived with deadline (actual: %d, virtual: "
@@ -549,6 +555,7 @@ static inline void log_core_state(uint8_t core_id) {
 
   log_job_queue(LOG_LEVEL_DEBUG, "Ready Queue", &cs->ready_queue);
   log_job_queue(LOG_LEVEL_DEBUG, "Replica Queue", &cs->replica_queue);
+  log_job_queue(LOG_LEVEL_DEBUG, "Pending Jobs", &cs->pending_jobs_queue);
   UNLOCK_RQ(core_id);
 }
 
