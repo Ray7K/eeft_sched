@@ -1,4 +1,5 @@
 # pyright: basic
+import copy
 import math
 from enum import IntEnum
 
@@ -86,14 +87,18 @@ class Core:
             if l < 0:
                 return 0
 
+            if t.criticality_level < m_prime:
+                return 0
+
             vd = t.virtual_deadline
             dbf_val = 0
             if m == -1:
-                dbf_val = max(math.floor((l - vd[0]) / t.period) + 1, 0) * t.wcet[0]
+                dbf_val = max((math.floor((l - vd[0]) / t.period) + 1) * t.wcet[0], 0)
             else:
-                full = (
-                    max(math.floor((l - (vd[m_prime] - vd[m])) / t.period) + 1, 0)
-                    * t.wcet[m_prime]
+                full = max(
+                    (math.floor((l - (vd[m_prime] - vd[m])) / t.period) + 1)
+                    * t.wcet[m_prime],
+                    0,
                 )
                 x = l % t.period
                 done = 0
@@ -102,6 +107,7 @@ class Core:
                 done = max(0, min(done, t.wcet[m_prime]))
                 dbf_val = full - done
 
+            assert dbf_val >= 0
             return max(0, dbf_val)
 
         def compute_l_max(tasks, m, m_prime, cap):
@@ -162,10 +168,7 @@ class Core:
                         changed = True
                         break
 
-                tasks_in_m_prime = [
-                    t for t in all_candidates if t.criticality_level >= m_prime
-                ]
-                sum_dbf = sum(dbf(t, m, m_prime, l) for t in tasks_in_m_prime)
+                sum_dbf = sum(dbf(t, m, m_prime, l) for t in all_candidates)
                 if sum_dbf > l:
                     if not tuning_candidates:
                         return False
@@ -284,6 +287,10 @@ class Task:
         )
         return tuple(self.get_utilization(level) for level in crit_levels)
 
+    def clone(self):
+        new_task = copy.deepcopy(self)
+        return new_task
+
 
 class Allocator:
     def __init__(self, sys_config: dict, tasks: list):
@@ -385,7 +392,8 @@ class Allocator:
 
     def allocate_tasks(self, taskset):
         for task in taskset:
-            while not self.allocate_primary(task):
+            new_task_instance = task.clone()
+            while not self.allocate_primary(new_task_instance):
                 self.num_procs_estimate += 1
 
                 if (
@@ -395,8 +403,8 @@ class Allocator:
                     raise Exception("Insufficient processors to allocate all tasks.")
 
             for _ in range(task.replicas):
-
-                while not self.allocate_replica(task):
+                new_task_instance = task.clone()
+                while not self.allocate_replica(new_task_instance):
                     self.num_procs_estimate += 1
 
                     if (
