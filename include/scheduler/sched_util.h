@@ -4,6 +4,10 @@
 #include "task_management.h"
 #include <stdlib.h>
 
+#define SLACK_MARGIN_TICKS 0.05f
+#define SLACK_CALC_HORIZON_TICKS_CAP 5000
+#define MAX_DEADLINES (MAX_TASKS * 64)
+
 extern const task_struct *task_lookup[MAX_TASKS + 1];
 
 static inline const task_struct *find_task_by_id(uint32_t task_id) {
