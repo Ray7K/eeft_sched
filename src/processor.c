@@ -17,7 +17,8 @@ processor_state proc_state;
 
 barrier *proc_barrier __attribute__((weak)) = NULL;
 
-static volatile sig_atomic_t shutdown_requested = 0;
+_Atomic int core_fatal_shutdown_requested = 0;
+static _Atomic int proc_shutdown_requested = 0;
 
 #define SYSTEM_TICK_MS 1
 
@@ -30,8 +31,11 @@ __thread log_thread_context log_thread_ctx = {0, 0, false};
 static void *timer_thread_func(void *arg) {
   (void)arg;
 
-  while (!shutdown_requested) {
+  while (!atomic_load(&proc_shutdown_requested)) {
     barrier_wait(&proc_state.core_completion_barrier);
+    if (atomic_load(&proc_shutdown_requested)) {
+      break;
+    }
     ring_buffer_clear(&proc_state.incoming_completion_msg_queue);
 
     ipc_receive_completion_messages();
@@ -48,10 +52,14 @@ static void *timer_thread_func(void *arg) {
     }
     pthread_mutex_unlock(&proc_state.discard_queue_lock);
 
+    if (atomic_load(&core_fatal_shutdown_requested)) {
+      atomic_store(&proc_shutdown_requested, 1);
+    }
+
     atomic_fetch_add_explicit(&proc_state.system_time, 1, memory_order_relaxed);
 
     if (TOTAL_TICKS > 0 && proc_state.system_time >= TOTAL_TICKS) {
-      shutdown_requested = 1;
+      atomic_store(&proc_shutdown_requested, 1);
     }
 
     ipc_send_completion_messages();
@@ -71,7 +79,7 @@ static void *core_thread_func(void *arg) {
   log_thread_ctx.core_id = core_id;
   log_thread_ctx.is_set = true;
 
-  while (!shutdown_requested) {
+  while (!atomic_load(&proc_shutdown_requested)) {
     scheduler_tick(core_id);
     barrier_wait(&proc_state.core_completion_barrier);
     barrier_wait(&proc_state.time_sync_barrier);
@@ -88,14 +96,13 @@ void processor_cleanup(void) {
   ipc_cleanup();
 }
 
-static void processor_sigint_handler(int sig) {
+static void processor_sigusr_handler(int sig) {
   (void)sig;
-  shutdown_requested = 1;
+  atomic_store(&proc_shutdown_requested, 1);
 }
 
 void processor_init(uint8_t proc_id) {
-  signal(SIGTERM, processor_sigint_handler);
-  signal(SIGINT, processor_sigint_handler);
+  signal(SIGUSR1, processor_sigusr_handler);
 
   log_system_init(proc_id);
 
@@ -145,4 +152,10 @@ void processor_run(void) {
   }
   pthread_join(timer_thread, NULL);
   processor_cleanup();
+
+  if (atomic_load(&core_fatal_shutdown_requested)) {
+    _exit(EXIT_FAILURE);
+  } else {
+    _exit(EXIT_SUCCESS);
+  }
 }

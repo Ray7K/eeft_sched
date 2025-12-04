@@ -15,7 +15,7 @@ ring_buffer log_queue;
 
 static FILE *log_file = NULL;
 static pthread_t logger_thread;
-static _Atomic int shutdown_requested = 0;
+static _Atomic int log_shutdown_requested = 0;
 
 platform_sem_t log_sem;
 
@@ -34,7 +34,7 @@ static void *logger_thread_func(void *arg) {
 
   atomic_store(&log_wakeup_pending, 0);
 
-  while (!atomic_load(&shutdown_requested)) {
+  while (!atomic_load(&log_shutdown_requested)) {
     platform_sem_wait(&log_sem);
 
     while (ring_buffer_try_dequeue(&log_queue, msg) == 0) {
@@ -72,7 +72,7 @@ void log_system_init(uint8_t proc_id) {
 }
 
 void log_system_shutdown(void) {
-  atomic_store(&shutdown_requested, 1);
+  atomic_store(&log_shutdown_requested, 1);
 
   platform_sem_post(&log_sem);
 

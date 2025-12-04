@@ -37,31 +37,23 @@ uint8_t calc_required_dvfs_level(uint8_t core_id) {
     return NUM_DVFS_LEVELS - 1; // lowest power state
 
   uint32_t now = proc_state.system_time;
-  float min_slack = FLT_MAX;
-
-  for (uint8_t crit_lvl = cs->local_criticality_level;
-       crit_lvl < MAX_CRITICALITY_LEVELS; crit_lvl++) {
-    float slack = find_slack(core_id, crit_lvl, now, 1.0f, NULL);
-    if (slack < min_slack) {
-      min_slack = slack;
-    }
-  }
-
-  if (min_slack <= 0.0f) {
-    return 0;
-  }
-
-  float remaining_hi =
-      (float)cs->running_job->parent_task->wcet[MAX_CRITICALITY_LEVELS - 1] -
-      cs->running_job->executed_time;
 
   int8_t best_level = 0;
 
   for (int8_t i = 0; i < NUM_DVFS_LEVELS; i++) {
     float scale = dvfs_levels[i].scaling_factor;
-    float added_time = (remaining_hi / scale) - remaining_hi;
 
-    if (added_time <= min_slack) {
+    float min_slack = FLT_MAX;
+
+    for (uint8_t crit_lvl = cs->local_criticality_level;
+         crit_lvl < MAX_CRITICALITY_LEVELS; crit_lvl++) {
+      float slack = find_slack(core_id, crit_lvl, now, scale, NULL);
+      if (slack < min_slack) {
+        min_slack = slack;
+      }
+    }
+
+    if (min_slack >= SLACK_MARGIN_TICKS) {
       best_level = i;
     } else {
       break;

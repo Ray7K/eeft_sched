@@ -14,7 +14,6 @@
 #include "task_management.h"
 
 #include <float.h>
-#include <signal.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -71,6 +70,8 @@ static void remove_completed_jobs(uint8_t core_id) {
       if (cur->parent_task->id == incoming_msg->completed_task_id &&
           cur->arrival_time == incoming_msg->job_arrival_time) {
         cur->state = JOB_STATE_REMOVED;
+        LOG(LOG_LEVEL_INFO, "Removed replica job %d, Reclaimed %.2f ticks",
+            incoming_msg->completed_task_id, cur->acet - cur->executed_time);
         list_del(&cur->link);
         put_job_ref(cur, core_id);
         LOG(LOG_LEVEL_INFO, "Removed replica job %d",
@@ -313,15 +314,22 @@ static void handle_running_job(uint8_t core_id) {
     if (cs->running_job->state == JOB_STATE_RUNNING &&
         proc_state.system_time > cs->running_job->actual_deadline) {
 
-      uint32_t task_id = cs->running_job->parent_task->id;
-      uint32_t deadline = cs->running_job->actual_deadline;
+      job_struct *missed_job = cs->running_job;
+      cs->running_job->state = JOB_STATE_COMPLETED;
+      cs->running_job = NULL;
+      cs->is_idle = true;
+
+      uint32_t task_id = missed_job->parent_task->id;
+      uint32_t deadline = missed_job->actual_deadline;
+
+      put_job_ref(missed_job, core_id);
 
       UNLOCK_RQ(core_id);
 
       LOG(LOG_LEVEL_ERROR, "Job %d missed its deadline %d", task_id, deadline);
       LOG(LOG_LEVEL_FATAL, "System Halted due to Deadline Miss");
       fputs("System Halted due to Deadline Miss\n", stderr);
-      kill(getppid(), SIGINT);
+      atomic_store(&core_fatal_shutdown_requested, 1);
       return;
     }
 

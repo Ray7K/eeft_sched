@@ -12,10 +12,6 @@
 #include <float.h>
 #include <math.h>
 
-#define SLACK_MARGIN_TICKS 0.05f
-#define SLACK_CALC_HORIZON_TICKS_CAP 5000
-#define MAX_DEADLINES (MAX_TASKS * 64)
-
 float generate_acet(job_struct *job) {
   const float bias_factor = 2.0f; // >1 biases toward lower criticalities
   uint8_t max_lvl = MAX_CRITICALITY_LEVELS - 1;
@@ -197,7 +193,7 @@ static inline float calculate_job_demand(const job_struct *j,
   if (vdl <= d) {
     float wcet = (float)j->parent_task->wcet[crit_lvl];
     float exec = j->executed_time;
-    return fmaxf(0.0f, (wcet - exec) / scaling_factor);
+    return fmaxf(0.0f, ceilf((wcet - exec) / scaling_factor));
   }
 
   return 0.0f;
@@ -266,7 +262,7 @@ static float __find_slack(uint8_t core_id, criticality_level crit_lvl,
       uint32_t arrival = (tstart / period + 1) * period;
 
       while (arrival + tuned_dl <= d) {
-        demand += (float)wcet / scaling_factor;
+        demand += ceilf((float)wcet / scaling_factor);
         arrival += period;
       }
     }
