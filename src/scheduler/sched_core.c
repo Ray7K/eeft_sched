@@ -74,30 +74,30 @@ static void remove_completed_jobs(uint8_t core_id) {
             incoming_msg->completed_task_id, cur->acet - cur->executed_time);
         list_del(&cur->link);
         put_job_ref(cur, core_id);
-        LOG(LOG_LEVEL_INFO, "Removed replica job %d",
-            incoming_msg->completed_task_id);
       }
     }
     list_for_each_entry_safe(cur, next, &cs->ready_queue, link) {
       if (cur->parent_task->id == incoming_msg->completed_task_id &&
           cur->arrival_time == incoming_msg->job_arrival_time) {
         cur->state = JOB_STATE_REMOVED;
+        LOG(LOG_LEVEL_INFO, "Removed ready job %d, Reclaimed %.2f ticks",
+            incoming_msg->completed_task_id, cur->acet - cur->executed_time);
         list_del(&cur->link);
         put_job_ref(cur, core_id);
-        LOG(LOG_LEVEL_INFO, "Removed ready job %d",
-            incoming_msg->completed_task_id);
       }
     }
 
     if (cs->running_job != NULL &&
         cs->running_job->parent_task->id == incoming_msg->completed_task_id) {
       job_struct *running_job = cs->running_job;
+      LOG(LOG_LEVEL_INFO, "Preempting Job %d", running_job->parent_task->id);
       cs->running_job = NULL;
       running_job->state = JOB_STATE_REMOVED;
-      put_job_ref(running_job, core_id);
       cs->is_idle = true;
-      LOG(LOG_LEVEL_INFO, "Removed running job %d",
-          incoming_msg->completed_task_id);
+      LOG(LOG_LEVEL_INFO, "Removed running job %d, Reclaimed %.2f ticks",
+          incoming_msg->completed_task_id,
+          running_job->acet - running_job->executed_time);
+      put_job_ref(running_job, core_id);
     }
 
     UNLOCK_RQ(core_id);
