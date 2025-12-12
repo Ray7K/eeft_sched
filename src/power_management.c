@@ -180,8 +180,10 @@ bool power_management_try_procrastination(uint8_t core_id) {
 
   UNLOCK_RQ(core_id);
 
+#ifdef ENABLE_DPM
   power_management_set_dpm_interval(
       core_id, proc_state.system_time + (uint32_t)floorf(deferrable_time));
+#endif
 
   LOG(LOG_LEVEL_INFO, "Procrastinating for %.2f ticks", deferrable_time);
 

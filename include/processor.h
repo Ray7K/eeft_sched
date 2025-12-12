@@ -16,6 +16,8 @@
 
 #define MAX_LOG_MSG_SIZE 256
 
+extern _Atomic int core_fatal_shutdown_requested;
+
 typedef struct {
   _Atomic criticality_level system_criticality_level;
   _Atomic uint32_t system_time;

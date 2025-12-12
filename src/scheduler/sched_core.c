@@ -567,6 +567,10 @@ static inline void log_core_state(uint8_t core_id) {
 void scheduler_tick(uint8_t core_id) {
   core_state *cs = &core_states[core_id];
 
+#ifdef ENABLE_ECC
+  remove_completed_jobs(core_id);
+#endif
+
   if (cs->local_criticality_level !=
       atomic_load(&proc_state.system_criticality_level)) {
     handle_mode_change(core_id, proc_state.system_criticality_level);
@@ -586,14 +590,13 @@ void scheduler_tick(uint8_t core_id) {
 
   handle_job_arrivals(core_id);
 
-  remove_completed_jobs(core_id);
-
   reclaim_discarded_jobs(core_id);
 
-  // Migration
+#ifdef ENABLE_MIGRATION
   update_delegations(core_id);
   attempt_migration_push(core_id);
   process_migration_requests(core_id);
+#endif
 
   job_struct *next_job = select_next_job(core_id);
 
@@ -602,20 +605,28 @@ void scheduler_tick(uint8_t core_id) {
     dispatch_job(core_id, next_job);
   }
 
+#ifdef ENABLE_PROCRASTINATION
   if (power_management_try_procrastination(core_id)) {
     goto pmsp_skip;
   }
+#endif
 
+#ifdef ENABLE_DVFS
   if (cs->decision_point) {
     power_set_dvfs_level(core_id, calc_required_dvfs_level(core_id));
   }
+#endif
 
+#ifdef ENABLE_DPM
   if (cs->is_idle) {
     uint32_t next_eff_arrival_time = find_next_effective_arrival_time(core_id);
     power_management_set_dpm_interval(core_id, next_eff_arrival_time);
   }
+#endif
 
+#ifdef ENABLE_PROCRASTINATION
 pmsp_skip:
+#endif
   update_core_summary(core_id);
 
   log_core_state(core_id);
