@@ -364,7 +364,6 @@ static void handle_running_job(uint8_t core_id) {
 
 static job_struct *select_next_job(uint8_t core_id) {
   core_state *cs = &core_states[core_id];
-  bool from_ready_queue = false;
 
   job_struct *next_job_candidate;
 
@@ -375,13 +374,11 @@ static job_struct *select_next_job(uint8_t core_id) {
 
     if (ready_job->virtual_deadline <= replica_job->virtual_deadline) {
       next_job_candidate = ready_job;
-      from_ready_queue = true;
     } else {
       next_job_candidate = replica_job;
     }
   } else if (list_empty(&cs->ready_queue) == false) {
     next_job_candidate = peek_next_job(&cs->ready_queue);
-    from_ready_queue = true;
   } else if (list_empty(&cs->replica_queue) == false) {
     next_job_candidate = peek_next_job(&cs->replica_queue);
   } else {
@@ -391,7 +388,7 @@ static job_struct *select_next_job(uint8_t core_id) {
   if (next_job_candidate != NULL &&
       (cs->running_job == NULL || cs->running_job->virtual_deadline >
                                       next_job_candidate->virtual_deadline)) {
-    if (from_ready_queue) {
+    if (!next_job_candidate->is_replica) {
       next_job_candidate = pop_next_job(&cs->ready_queue);
     } else {
       next_job_candidate = pop_next_job(&cs->replica_queue);
